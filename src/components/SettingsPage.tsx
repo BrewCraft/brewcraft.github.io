@@ -68,10 +68,10 @@ export default function SettingsPage() {
   const location = useLocation();
   const [counts, setCounts] = useState(readAll);
   const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [cloudConfig, setCloudConfig] = useState(readCloudSyncConfig);
-  const [draftCloudConfig, setDraftCloudConfig] = useState(readCloudSyncConfig);
+  const [selectedProvider, setSelectedProvider] = useState<CloudProvider>("dropbox");
+  const [cloudConfig, setCloudConfig] = useState<ReturnType<typeof readCloudSyncConfig>>(() => readCloudSyncConfig("dropbox"));
+  const [draftCloudConfig, setDraftCloudConfig] = useState<ReturnType<typeof readCloudSyncConfig>>(() => readCloudSyncConfig("dropbox"));
   const [cloudSyncMsg, setCloudSyncMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [selectedProvider, setSelectedProvider] = useState<CloudProvider>(() => readCloudSyncConfig().provider);
 
   useEffect(() => {
     if (!location.hash) return;
@@ -82,21 +82,19 @@ export default function SettingsPage() {
   }, [location.hash]);
 
   useEffect(() => {
-    const next = readCloudSyncConfig();
+    const next = readCloudSyncConfig(selectedProvider);
     setDraftCloudConfig(next);
     setCloudConfig(next);
-    setSelectedProvider(next.provider);
-  }, []);
+  }, [selectedProvider]);
 
   const updateCloudConfig = (patch: Partial<typeof draftCloudConfig>) => {
     setDraftCloudConfig((prev) => ({ ...prev, ...patch }));
   };
 
   const refreshCloudConfig = () => {
-    const next = readCloudSyncConfig();
+    const next = readCloudSyncConfig(selectedProvider);
     setCloudConfig(next);
     setDraftCloudConfig(next);
-    setSelectedProvider(next.provider);
   };
 
   const handleSaveCloudConfig = async () => {
@@ -110,7 +108,7 @@ export default function SettingsPage() {
     }
 
     try {
-      const result = await syncCloudData();
+      const result = await syncCloudData(selectedProvider);
       setCloudSyncMsg({ ok: true, text: `Sincronização concluída: ${result.message}` });
     } catch (error) {
       setCloudSyncMsg({ ok: false, text: error instanceof Error ? error.message : "Não foi possível sincronizar." });
@@ -120,7 +118,7 @@ export default function SettingsPage() {
   const handleConnectProvider = async (provider: CloudProvider) => {
     try {
       const session = await connectProvider(provider);
-      const next = readCloudSyncConfig();
+      const next = readCloudSyncConfig(provider);
       setSelectedProvider(provider);
       setCloudConfig(next);
       setDraftCloudConfig(next);
@@ -141,13 +139,13 @@ export default function SettingsPage() {
   };
 
   const handleSyncProvider = async (provider: CloudProvider) => {
-    const next = saveCloudSyncConfig({ ...readCloudSyncConfig(), provider, enabled: true });
+    const next = saveCloudSyncConfig({ ...readCloudSyncConfig(provider), provider, enabled: true });
     setCloudConfig(next);
     setDraftCloudConfig(next);
     setSelectedProvider(provider);
 
     try {
-      const result = await syncCloudData();
+      const result = await syncCloudData(provider);
       setCloudSyncMsg({ ok: true, text: `Sincronização com ${cloudProviderLabels[provider]}: ${result.message}` });
     } catch (error) {
       setCloudSyncMsg({ ok: false, text: error instanceof Error ? error.message : `Não foi possível sincronizar com ${cloudProviderLabels[provider]}.` });

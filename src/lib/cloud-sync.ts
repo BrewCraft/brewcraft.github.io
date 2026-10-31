@@ -31,7 +31,8 @@ type ProviderSession = {
   syncFileName?: string;
 };
 
-const CLOUD_SYNC_KEY = "brewfather-cloud-sync";
+const LEGACY_CLOUD_SYNC_KEY = "brewfather-cloud-sync";
+const CLOUD_SYNC_KEY_PREFIX = "brewfather-cloud-sync-";
 const SESSION_PREFIX = "brewfather-cloud-session-";
 const PKCE_PREFIX = "brewfather-cloud-pkce-";
 
@@ -95,6 +96,10 @@ function safeJsonParse<T>(value: string | null, fallback: T): T {
 
 function getSessionKey(provider: CloudProvider) {
   return `${SESSION_PREFIX}${provider}`;
+}
+
+function getProviderConfigKey(provider: CloudProvider) {
+  return `${CLOUD_SYNC_KEY_PREFIX}${provider}`;
 }
 
 function getPkceKey(provider: CloudProvider) {
@@ -172,19 +177,12 @@ function getProviderAccountName(provider: CloudProvider) {
 }
 
 function getProviderLastSyncMessage(provider: CloudProvider) {
-  const config = readCloudSyncConfig();
-  if (config.provider !== provider) {
-    return defaultCloudSyncConfig.lastSyncStatus;
-  }
+  const config = readCloudSyncConfig(provider);
   return config.lastSyncStatus || defaultCloudSyncConfig.lastSyncStatus;
 }
 
 function getProviderLastSyncAt(provider: CloudProvider) {
-  const config = readCloudSyncConfig();
-  if (config.provider !== provider) {
-    return null;
-  }
-  return config.lastSyncAt;
+  return readCloudSyncConfig(provider).lastSyncAt;
 }
 
 export function googleDriveIsConnected() {
@@ -195,37 +193,57 @@ export function getGoogleDriveProfileName() {
   return getProviderAccountName("google-drive");
 }
 
-export function readCloudSyncConfig(): CloudSyncConfig {
+function readLegacyCloudSyncConfig(): Partial<CloudSyncConfig> | null {
   try {
-    const raw = safeJsonParse(localStorage.getItem(CLOUD_SYNC_KEY), null) as Partial<CloudSyncConfig> | null;
-    const provider = normalizeCloudProvider(raw?.provider ?? defaultCloudSyncConfig.provider);
+    const raw = safeJsonParse(localStorage.getItem(LEGACY_CLOUD_SYNC_KEY), null) as Partial<CloudSyncConfig> | null;
+    if (!raw || typeof raw !== "object") return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}
 
-    const sessionToken = readProviderSession(provider)?.accessToken ?? "";
-    const fallbackToken = typeof raw?.token === "string" ? raw.token : "";
+export function readCloudSyncConfig(provider?: CloudProvider): CloudSyncConfig {
+  const targetProvider = normalizeCloudProvider(provider ?? readLegacyCloudSyncConfig()?.provider ?? defaultCloudSyncConfig.provider);
+
+  try {
+    const raw = safeJsonParse(localStorage.getItem(getProviderConfigKey(targetProvider)), null) as Partial<CloudSyncConfig> | null;
+    const base = readLegacyCloudSyncConfig();
+    const legacyProvider = normalizeCloudProvider(base?.provider ?? defaultCloudSyncConfig.provider); 
+    const migrated = !raw && legacyProvider === targetProvider ? base : raw;
+
+    const sessionToken = readProviderSession(targetProvider)?.accessToken ?? "";
+    const fallbackToken = typeof migrated?.token === "string" ? migrated.token : "";
     const token = sessionToken || fallbackToken;
 
-    return {
+    const config: CloudSyncConfig = {
       ...defaultCloudSyncConfig,
-      ...(raw ?? {}),
-      provider,
-      enabled: Boolean(raw?.enabled),
+      ...(migrated ?? {}),
+      provider: targetProvider,
+      enabled: Boolean(migrated?.enabled),
       token,
-      folder: typeof raw?.folder === "string" && raw.folder.trim() ? raw.folder : defaultCloudSyncConfig.folder,
-      fileName: typeof raw?.fileName === "string" && raw.fileName.trim() ? raw.fileName : defaultCloudSyncConfig.fileName,
-      lastSyncAt: typeof raw?.lastSyncAt === "string" ? raw.lastSyncAt : null,
-      lastSyncStatus: typeof raw?.lastSyncStatus === "string" ? raw.lastSyncStatus : defaultCloudSyncConfig.lastSyncStatus,
+      folder: typeof migrated?.folder === "string" && migrated.folder.trim() ? migrated.folder : defaultCloudSyncConfig.folder,
+      fileName: typeof migrated?.fileName === "string" && migrated.fileName.trim() ? migrated.fileName : defaultCloudSyncConfig.fileName,
+      lastSyncAt: typeof migrated?.lastSyncAt === "string" ? migrated.lastSyncAt : null,
+      lastSyncStatus: typeof migrated?.lastSyncStatus === "string" ? migrated.lastSyncStatus : defaultCloudSyncConfig.lastSyncStatus,
     };
+
+    if (!raw && legacyProvider === targetProvider && typeof base !== "undefined" && base !== null) {
+      localStorage.setItem(getProviderConfigKey(targetProvider), JSON.stringify(config));
+    }
+
+    return config;
   } catch {
-    return { ...defaultCloudSyncConfig };
+    return { ...defaultCloudSyncConfig, provider: targetProvider };
   }
 }
 
 export function saveCloudSyncConfig(patch: Partial<CloudSyncConfig>) {
-  const current = readCloudSyncConfig();
-  const provider = normalizeCloudProvider(patch.provider ?? current.provider ?? defaultCloudSyncConfig.provider);
+  const provider = normalizeCloudProvider(patch.provider ?? readCloudSyncConfig().provider ?? defaultCloudSyncConfig.provider);
+  const current = readCloudSyncConfig(provider);
   const next = { ...current, ...patch, provider };
 
-  const persisted: Record<string, unknown> = {
+  const persisted: CloudSyncConfig = {
     provider,
     enabled: Boolean(next.enabled),
     folder: next.folder.trim() || defaultCloudSyncConfig.folder,
@@ -242,8 +260,14 @@ export function saveCloudSyncConfig(patch: Partial<CloudSyncConfig>) {
     writeProviderSession(provider, null);
   }
 
-  localStorage.setItem(CLOUD_SYNC_KEY, JSON.stringify(persisted));
-  return readCloudSyncConfig();
+  localStorage.setItem(getProviderConfigKey(provider), JSON.stringify(persisted));
+  if (provider === "dropbox") {
+    const legacy = readLegacyCloudSyncConfig();
+    if (!legacy || legacy.provider !== provider) {
+      localStorage.removeItem(LEGACY_CLOUD_SYNC_KEY);
+    }
+  }
+  return readCloudSyncConfig(provider);
 }
 
 export function getCloudOAuthUrl(provider: CloudProvider, redirectUri: string = getRedirectUri()) {
@@ -294,7 +318,7 @@ export function captureCloudTokenFromUrl(provider: CloudProvider) {
   const params = new URLSearchParams(raw.includes("=") ? raw : `?${raw}`);
   const accessToken = params.get("access_token") || params.get("token");
   if (!accessToken) return null;
-  const config = readCloudSyncConfig();
+  const config = readCloudSyncConfig(provider);
   return saveCloudSyncConfig({
     ...config,
     provider,
@@ -937,8 +961,8 @@ async function writeRemoteFile(config: CloudSyncConfig, content: string) {
   }
 }
 
-export async function syncCloudData(): Promise<{ action: "uploaded" | "downloaded" | "skipped"; message: string }> {
-  const config = readCloudSyncConfig();
+export async function syncCloudData(provider: CloudProvider = readCloudSyncConfig().provider): Promise<{ action: "uploaded" | "downloaded" | "skipped"; message: string }> {
+  const config = readCloudSyncConfig(provider);
   if (!config.enabled) {
     throw new Error("Ative a sincronização antes de enviar ou baixar os dados da nuvem.");
   }
@@ -963,24 +987,24 @@ export async function syncCloudData(): Promise<{ action: "uploaded" | "downloade
 
       if (remoteUpdatedAt && localUpdatedAt && remoteUpdatedAt > localUpdatedAt) {
         restoreBackup(remotePayload);
-        saveCloudSyncConfig({ lastSyncAt: new Date().toISOString(), lastSyncStatus: "Dados baixados da nuvem" });
+        saveCloudSyncConfig({ provider: config.provider, lastSyncAt: new Date().toISOString(), lastSyncStatus: "Dados baixados da nuvem" });
         return { action: "downloaded", message: "Dados recebidos da nuvem e restaurados localmente." };
       }
 
       if (remoteUpdatedAt && localUpdatedAt && remoteUpdatedAt < localUpdatedAt) {
         await writeRemoteFile(config, localPayloadJson);
-        saveCloudSyncConfig({ lastSyncAt: new Date().toISOString(), lastSyncStatus: "Dados enviados para a nuvem" });
+        saveCloudSyncConfig({ provider: config.provider, lastSyncAt: new Date().toISOString(), lastSyncStatus: "Dados enviados para a nuvem" });
         return { action: "uploaded", message: "Dados locais enviados para a nuvem." };
       }
 
       if (remoteUpdatedAt && localUpdatedAt && remoteUpdatedAt === localUpdatedAt && remoteSignature !== localSignature) {
         localStorage.setItem("brewfather-cloud-conflict", JSON.stringify({ provider: config.provider, remotePayload, localPayload, createdAt: new Date().toISOString() }));
-        saveCloudSyncConfig({ lastSyncAt: new Date().toISOString(), lastSyncStatus: "Conflito detectado entre alterações locais e remotas" });
+        saveCloudSyncConfig({ provider: config.provider, lastSyncAt: new Date().toISOString(), lastSyncStatus: "Conflito detectado entre alterações locais e remotas" });
         return { action: "skipped", message: "Conflito detectado: a versão local e a remota diferiram. Nenhuma alteração foi sobrescrita." };
       }
 
       if (remoteRevision && localRevision && remoteRevision === localRevision && remoteUpdatedAt === localUpdatedAt) {
-        saveCloudSyncConfig({ lastSyncAt: new Date().toISOString(), lastSyncStatus: "Dados já sincronizados" });
+        saveCloudSyncConfig({ provider: config.provider, lastSyncAt: new Date().toISOString(), lastSyncStatus: "Dados já sincronizados" });
         return { action: "skipped", message: "Os dados já estavam sincronizados." };
       }
     } catch {
@@ -989,7 +1013,7 @@ export async function syncCloudData(): Promise<{ action: "uploaded" | "downloade
   }
 
   await writeRemoteFile(config, localPayloadJson);
-  saveCloudSyncConfig({ lastSyncAt: new Date().toISOString(), lastSyncStatus: "Dados enviados para a nuvem" });
+  saveCloudSyncConfig({ provider: config.provider, lastSyncAt: new Date().toISOString(), lastSyncStatus: "Dados enviados para a nuvem" });
   return { action: "uploaded", message: "Dados enviados para a nuvem." };
 }
 
@@ -1030,7 +1054,7 @@ export async function loadGoogleDriveFile(fileId: string): Promise<string> {
 
 export async function createGoogleDriveFile(fileName: string, content: string): Promise<GoogleDriveFile> {
   const token = await ensureAccessToken("google-drive");
-  const folderId = await ensureGoogleDriveFolder(readCloudSyncConfig().folder, token);
+  const folderId = await ensureGoogleDriveFolder(readCloudSyncConfig("google-drive").folder, token);
   const metadata = {
     name: fileName || defaultCloudSyncConfig.fileName,
     mimeType: "application/json",
@@ -1086,7 +1110,7 @@ export async function openGoogleDrivePicker(): Promise<GoogleDriveFile | null> {
 
 export function getProviderConnectionStatus(provider: CloudProvider) {
   const session = readProviderSession(provider);
-  const config = readCloudSyncConfig();
+  const config = readCloudSyncConfig(provider);
   const hasToken = Boolean(session?.accessToken || config.token);
   const connected = hasToken && (config.enabled || Boolean(session?.accessToken));
   const accountName = session?.accountName ?? (config.enabled && hasToken ? "Conta conectada" : null);
@@ -1100,7 +1124,7 @@ export function getProviderConnectionStatus(provider: CloudProvider) {
 }
 
 export function getConnectedProviderAccountName(provider: CloudProvider) {
-  return getProviderAccountName(provider) ?? (readCloudSyncConfig().enabled ? "Conta conectada" : null);
+  return getProviderAccountName(provider) ?? (readCloudSyncConfig(provider).enabled ? "Conta conectada" : null);
 }
 
 export { readAllLocalData };
