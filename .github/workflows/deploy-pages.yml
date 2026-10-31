@@ -32,6 +32,8 @@ jobs:
 
       - name: Build static app
         run: npm run build
+        env:
+          VITE_DROPBOX_CLIENT_ID: ${{ vars.VITE_DROPBOX_CLIENT_ID }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
