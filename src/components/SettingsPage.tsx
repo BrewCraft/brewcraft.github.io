@@ -273,7 +273,7 @@ export default function SettingsPage() {
                 <div key={provider} className={`rounded-md border p-3 ${isSelected ? "border-primary bg-primary/5" : "border-border bg-muted/20"}`}>
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium text-foreground">{cloudProviderLabels[provider]}</span>
-                    <span className={`rounded-full px-2 py-1 text-[10px] font-medium ${status.connected ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" : "bg-muted text-muted-foreground"}`}>
+                    <span className={`rounded-full border px-2 py-1 text-[10px] font-medium ${status.connected ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" : "border-red-500/30 bg-red-500/15 text-red-700 dark:text-red-300"}`}>
                       {status.connected ? "Conectado" : "Desconectado"}
                     </span>
                   </div>

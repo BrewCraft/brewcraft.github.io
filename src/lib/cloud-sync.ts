@@ -1060,18 +1060,23 @@ export async function openGoogleDrivePicker(): Promise<GoogleDriveFile | null> {
   return files[0] ?? null;
 }
 
-export async function getProviderConnectionStatus(provider: CloudProvider) {
+export function getProviderConnectionStatus(provider: CloudProvider) {
   const session = readProviderSession(provider);
+  const config = readCloudSyncConfig();
+  const hasToken = Boolean(session?.accessToken || config.token);
+  const connected = hasToken && (config.enabled || Boolean(session?.accessToken));
+  const accountName = session?.accountName ?? (config.enabled && hasToken ? "Conta conectada" : null);
+
   return {
-    connected: Boolean(session?.accessToken),
-    accountName: session?.accountName ?? null,
+    connected,
+    accountName,
     lastSync: getProviderLastSyncAt(provider),
     lastSyncStatus: getProviderLastSyncMessage(provider),
   };
 }
 
 export function getConnectedProviderAccountName(provider: CloudProvider) {
-  return getProviderAccountName(provider);
+  return getProviderAccountName(provider) ?? (readCloudSyncConfig().enabled ? "Conta conectada" : null);
 }
 
 export { readAllLocalData };
