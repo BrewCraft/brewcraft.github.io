@@ -17,6 +17,7 @@ import {
   getProviderConnectionStatus,
   readCloudSyncConfig,
   saveCloudSyncConfig,
+  supportedCloudProviders,
   syncCloudData,
   type CloudProvider,
 } from "@/lib/cloud-sync";
@@ -60,7 +61,7 @@ const writeAll = (data: Backup) => {
   }
 };
 
-const PROVIDERS: CloudProvider[] = ["dropbox"];
+const PROVIDERS: CloudProvider[] = supportedCloudProviders;
 
 export default function SettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -261,7 +262,7 @@ export default function SettingsPage() {
             <Cloud className="h-5 w-5 text-accent" />
             Nuvem e sincronização
           </CardTitle>
-          <CardDescription>Conecte diretamente ao Dropbox sem servidor próprio.</CardDescription>
+          <CardDescription>Conecte diretamente ao Dropbox, Google Drive ou OneDrive sem servidor próprio.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="grid gap-3 md:grid-cols-3">

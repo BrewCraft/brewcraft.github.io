@@ -51,7 +51,14 @@ export const cloudProviderLabels: Record<CloudProvider, string> = {
   onedrive: "OneDrive",
 };
 
-export const supportedCloudProviders: CloudProvider[] = ["dropbox"];
+export const supportedCloudProviders: CloudProvider[] = ["dropbox", "google-drive", "onedrive"];
+
+function normalizeCloudProvider(provider?: string | null, fallback: CloudProvider = "dropbox"): CloudProvider {
+  if (provider === "dropbox" || provider === "google-drive" || provider === "onedrive") {
+    return provider;
+  }
+  return fallback;
+}
 
 const readAllLocalData = () => {
   const keyMap = {
@@ -191,7 +198,7 @@ export function getGoogleDriveProfileName() {
 export function readCloudSyncConfig(): CloudSyncConfig {
   try {
     const raw = safeJsonParse(localStorage.getItem(CLOUD_SYNC_KEY), null) as Partial<CloudSyncConfig> | null;
-    const provider = "dropbox";
+    const provider = normalizeCloudProvider(raw?.provider ?? defaultCloudSyncConfig.provider);
 
     const sessionToken = readProviderSession(provider)?.accessToken ?? "";
     const fallbackToken = typeof raw?.token === "string" ? raw.token : "";
@@ -215,8 +222,8 @@ export function readCloudSyncConfig(): CloudSyncConfig {
 
 export function saveCloudSyncConfig(patch: Partial<CloudSyncConfig>) {
   const current = readCloudSyncConfig();
-  const next = { ...current, ...patch, provider: "dropbox" as const };
-  const provider = next.provider;
+  const provider = normalizeCloudProvider(patch.provider ?? current.provider ?? defaultCloudSyncConfig.provider);
+  const next = { ...current, ...patch, provider };
 
   const persisted: Record<string, unknown> = {
     provider,
@@ -228,13 +235,11 @@ export function saveCloudSyncConfig(patch: Partial<CloudSyncConfig>) {
     token: next.token || "",
   };
 
-  if (provider === "dropbox") {
-    const session = readProviderSession(provider);
-    if (next.token && session) {
-      writeProviderSession(provider, { ...session, accessToken: next.token });
-    } else if (!next.token) {
-      writeProviderSession(provider, null);
-    }
+  const session = readProviderSession(provider);
+  if (next.token && session) {
+    writeProviderSession(provider, { ...session, accessToken: next.token });
+  } else if (!next.token) {
+    writeProviderSession(provider, null);
   }
 
   localStorage.setItem(CLOUD_SYNC_KEY, JSON.stringify(persisted));
