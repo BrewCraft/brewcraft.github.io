@@ -738,8 +738,19 @@ async function ensureGoogleDriveFolder(folderName: string, token: string) {
   return createData.id;
 }
 
+function normalizeRemotePathSegment(value: string) {
+  return value.trim().replace(/^\/+|\/+$/g, "");
+}
+
+export function getRemotePath(config: CloudSyncConfig) {
+  const folder = normalizeRemotePathSegment(config.folder);
+  const fileName = normalizeRemotePathSegment(config.fileName || defaultCloudSyncConfig.fileName);
+  const segments = [folder, fileName].filter(Boolean);
+  return `/${segments.join("/")}`;
+}
+
 async function ensureDropboxFolder(folderPath: string, token: string) {
-  const normalized = folderPath.trim();
+  const normalized = normalizeRemotePathSegment(folderPath);
   if (!normalized) return;
 
   const response = await fetch("https://api.dropboxapi.com/2/files/create_folder_v2", {
@@ -748,13 +759,13 @@ async function ensureDropboxFolder(folderPath: string, token: string) {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ path: `/${normalized.replace(/^\/+/, "")}` }),
+    body: JSON.stringify({ path: `/${normalized}` }),
   });
 
   if (response.status === 409) return;
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Não foi possível criar a pasta do Dropbox: ${text.slice(0, 200)}`);
+    throw new Error(`Não foi possível criar a pasta do Dropbox: ${response.status} ${text.slice(0, 200)}`);
   }
 }
 
@@ -799,7 +810,7 @@ async function readRemoteFile(config: CloudSyncConfig): Promise<string | null> {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
-          "Dropbox-API-Arg": JSON.stringify({ path: `/${getRemotePath(config).replace(/^\/+/, "")}` }),
+          "Dropbox-API-Arg": JSON.stringify({ path: getRemotePath(config) }),
         },
       });
       if (response.status === 404 || response.status === 409) return null;
@@ -835,6 +846,9 @@ async function writeRemoteFile(config: CloudSyncConfig, content: string) {
   const token = await ensureAccessToken(config.provider);
 
   if (config.provider === "dropbox") {
+    if (!content || !content.trim()) {
+      throw new Error("Não há conteúdo válido para enviar ao Dropbox.");
+    }
     await ensureDropboxFolder(config.folder, token);
     const response = await fetch("https://content.dropboxapi.com/2/files/upload", {
       method: "POST",
@@ -842,8 +856,8 @@ async function writeRemoteFile(config: CloudSyncConfig, content: string) {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/octet-stream",
         "Dropbox-API-Arg": JSON.stringify({
-          path: `/${getRemotePath(config).replace(/^\/+/, "")}`,
-          mode: "overwrite",
+          path: getRemotePath(config),
+          mode: { ".tag": "overwrite" },
           autorename: false,
           mute: true,
         }),
@@ -925,6 +939,11 @@ export async function syncCloudData(): Promise<{ action: "uploaded" | "downloade
   }
 
   const localPayload = makeCloudPayload();
+  const localPayloadJson = JSON.stringify(localPayload, null, 2);
+  if (!localPayloadJson || !localPayloadJson.trim()) {
+    throw new Error("Não há dados locais válidos para sincronização.");
+  }
+
   const remoteText = await readRemoteFile(config);
 
   if (remoteText) {
@@ -944,7 +963,7 @@ export async function syncCloudData(): Promise<{ action: "uploaded" | "downloade
       }
 
       if (remoteUpdatedAt && localUpdatedAt && remoteUpdatedAt < localUpdatedAt) {
-        await writeRemoteFile(config, JSON.stringify(localPayload, null, 2));
+        await writeRemoteFile(config, localPayloadJson);
         saveCloudSyncConfig({ lastSyncAt: new Date().toISOString(), lastSyncStatus: "Dados enviados para a nuvem" });
         return { action: "uploaded", message: "Dados locais enviados para a nuvem." };
       }
@@ -964,7 +983,7 @@ export async function syncCloudData(): Promise<{ action: "uploaded" | "downloade
     }
   }
 
-  await writeRemoteFile(config, JSON.stringify(localPayload, null, 2));
+  await writeRemoteFile(config, localPayloadJson);
   saveCloudSyncConfig({ lastSyncAt: new Date().toISOString(), lastSyncStatus: "Dados enviados para a nuvem" });
   return { action: "uploaded", message: "Dados enviados para a nuvem." };
 }
