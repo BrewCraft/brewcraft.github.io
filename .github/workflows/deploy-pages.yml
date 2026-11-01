@@ -34,6 +34,8 @@ jobs:
         run: npm run build
         env:
           VITE_DROPBOX_CLIENT_ID: ${{ vars.VITE_DROPBOX_CLIENT_ID }}
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+          VITE_ONEDRIVE_CLIENT_ID: ${{ vars.VITE_ONEDRIVE_CLIENT_ID }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
