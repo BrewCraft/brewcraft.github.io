@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Copy, Plus, Search, Trash2 } from "lucide-react";
+import { Copy, Plus, Search, Star, Trash2 } from "lucide-react";
 import { recipeStats, srmToHex } from "@/lib/recipe-calc";
 import { allStyles, fmt, money, uid, useRecipes } from "@/lib/store";
 
@@ -13,9 +13,14 @@ export default function RecipesPage() {
   const [recipes, save] = useRecipes();
   const [q, setQ] = useState("");
   const styles = allStyles();
-  const list = recipes.filter(r => r.name.toLowerCase().includes(q.toLowerCase()));
+  const list = [...recipes]
+    .filter(r => r.name.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)) || a.name.localeCompare(b.name, "pt-BR") || a.id.localeCompare(b.id));
   const duplicate = (id: string) => { const r = recipes.find(x => x.id === id)!; save([...recipes, { ...structuredClone(r), id: uid(), name: `${r.name} (cópia)` }]); };
   const remove = (id: string) => { if (confirm("Excluir esta receita?")) save(recipes.filter(r => r.id !== id)); };
+  const toggleFavorite = (id: string) => {
+    save(recipes.map(r => r.id === id ? { ...r, favorite: !r.favorite, updatedAt: new Date().toISOString() } : r));
+  };
 
   return (
     <div className="space-y-6">
@@ -38,6 +43,7 @@ export default function RecipesPage() {
                     <div><CardTitle className="text-lg">{r.name}</CardTitle><p className="text-sm text-muted-foreground">{style?.name ?? "Sem estilo"}</p></div>
                   </div>
                   <div className="flex" onClick={e => e.stopPropagation()}>
+                    <Button variant="ghost" size="icon" aria-label={r.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"} onClick={() => toggleFavorite(r.id)}><Star className={`h-4 w-4 ${r.favorite ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground"}`} /></Button>
                     <Button variant="ghost" size="icon" aria-label="Duplicar" onClick={() => duplicate(r.id)}><Copy className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="icon" aria-label="Excluir" onClick={() => remove(r.id)}><Trash2 className="h-4 w-4" /></Button>
                   </div>

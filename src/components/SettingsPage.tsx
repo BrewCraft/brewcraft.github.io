@@ -269,7 +269,11 @@ export default function SettingsPage() {
               const connectedName = getConnectedProviderAccountName(provider) ?? "Não conectada";
               const isSelected = selectedProvider === provider;
               return (
-                <div key={provider} className={`rounded-md border p-3 ${isSelected ? "border-primary bg-primary/5" : "border-border bg-muted/20"}`}>
+                <div
+                  key={provider}
+                  className={`cursor-pointer rounded-md border p-3 transition-colors ${isSelected ? "border-primary bg-primary/5" : "border-border bg-muted/20"}`}
+                  onClick={() => setSelectedProvider(provider)}
+                >
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium text-foreground">{cloudProviderLabels[provider]}</span>
                     <span className={`rounded-full border px-2 py-1 text-[10px] font-medium ${status.connected ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" : "border-red-500/30 bg-red-500/15 text-red-700 dark:text-red-300"}`}>
@@ -279,7 +283,7 @@ export default function SettingsPage() {
                   <p className="mt-2 text-xs text-muted-foreground">Conta: {connectedName}</p>
                   <p className="mt-1 text-xs text-muted-foreground">Última sincronização: {status.lastSync ? new Date(status.lastSync).toLocaleString() : "Nunca"}</p>
                   <p className="mt-1 text-xs text-muted-foreground">Resultado: {status.lastSyncStatus}</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="mt-3 flex flex-wrap gap-2" onClick={(event) => event.stopPropagation()}>
                     {!status.connected ? (
                       <Button size="sm" variant="outline" onClick={() => void handleConnectProvider(provider)}>
                         Conectar
@@ -300,21 +304,10 @@ export default function SettingsPage() {
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="cloud-provider">Provedor ativo</Label>
-              <select
-                id="cloud-provider"
-                value={selectedProvider}
-                onChange={(event) => {
-                  const nextProvider = event.target.value as CloudProvider;
-                  setSelectedProvider(nextProvider);
-                  setDraftCloudConfig((prev) => ({ ...prev, provider: nextProvider }));
-                }}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-              >
-                {PROVIDERS.map((provider) => (
-                  <option key={provider} value={provider}>{cloudProviderLabels[provider]}</option>
-                ))}
-              </select>
+              <Label>Provedor ativo</Label>
+              <div className="flex h-10 items-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium">
+                {cloudProviderLabels[selectedProvider]}
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="cloud-enabled">Estado</Label>

@@ -16,7 +16,7 @@ export interface Recipe {
   equipment: Equipment; mashSteps: MashStep[]; fermentationTempC: number; fermentationDays: number;
   waterProfileId?: string; equipmentProfileId?: string; mashProfileId?: string; fermentationProfileId?: string;
   fermentables: RecipeFermentable[]; hops: RecipeHop[]; yeasts: RecipeYeast[]; miscs: RecipeMisc[];
-  createdAt: string; updatedAt: string;
+  favorite?: boolean; createdAt: string; updatedAt: string;
 }
 
 export const defaultEquipment: Equipment = { batchL: 20, boilMinutes: 60, evaporationLh: 4, trubLossL: 1, fermenterLossL: 1, efficiency: 72 };

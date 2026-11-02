@@ -74,14 +74,34 @@ const readAllLocalData = () => {
   } as const;
 
   const result: Record<string, unknown[]> = {};
+
   for (const [name, storageKey] of Object.entries(keyMap)) {
-    try {
-      const value = JSON.parse(localStorage.getItem(storageKey) ?? "[]");
-      result[name] = Array.isArray(value) ? value : [];
-    } catch {
+    const raw = localStorage.getItem(storageKey);
+
+    if (raw === null) {
       result[name] = [];
+      continue;
     }
+
+    let value: unknown;
+
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      throw new Error(
+        `Não foi possível ler "${name}". A sincronização foi cancelada para proteger seus dados.`
+      );
+    }
+
+    if (!Array.isArray(value)) {
+      throw new Error(
+        `Os dados de "${name}" estão inválidos. A sincronização foi cancelada.`
+      );
+    }
+
+    result[name] = value;
   }
+
   return result;
 };
 
@@ -829,42 +849,65 @@ async function ensureOneDriveFolder(folderName: string, token: string) {
   }
 }
 
+
 async function readRemoteFile(config: CloudSyncConfig): Promise<string | null> {
-  if (!config.enabled) return null;
-  try {
-    const token = await ensureAccessToken(config.provider);
+  if (!config.enabled) {
+    throw new Error("Ative a sincronização antes de consultar a nuvem.");
+  }
 
-    if (config.provider === "dropbox") {
-      const response = await fetch("https://content.dropboxapi.com/2/files/download", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Dropbox-API-Arg": JSON.stringify({ path: getRemotePath(config) }),
-        },
-      });
-      if (response.status === 404 || response.status === 409) return null;
-      return await response.text();
+  const token = await ensureAccessToken(config.provider);
+
+  if (config.provider === "dropbox") {
+    const response = await fetch("https://content.dropboxapi.com/2/files/download", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Dropbox-API-Arg": JSON.stringify({ path: getRemotePath(config) }),
+      },
+    });
+
+    if (response.status === 409) {
+      const error = await response.json().catch(() => ({}));
+      if (error?.error?.[".tag"] === "path" &&
+          error?.error?.path?.[".tag"] === "not_found") {
+        return null;
+      }
     }
 
-    if (config.provider === "google-drive") {
-      const existing = await findGoogleDriveFile(config);
-      if (!existing) return null;
-      const response = await fetch(`https://www.googleapis.com/drive/v3/files/${existing.id}?alt=media`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.status === 404) return null;
-      return await response.text();
+    if (!response.ok) {
+      throw new Error(`Erro ao ler arquivo no Dropbox: ${response.status} ${await response.text()}`);
     }
 
-    const encodedPath = getRemotePath(config).split("/").map((segment) => encodeURIComponent(segment)).join("/");
-    const response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:/${encodedPath}:/content`, {
+    return await response.text();
+  }
+
+  if (config.provider === "google-drive") {
+    const existing = await findGoogleDriveFile(config);
+    if (!existing) return null;
+
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${existing.id}?alt=media`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (response.status === 404) return null;
+
+    if (!response.ok) {
+      throw new Error(`Erro ao ler arquivo no Google Drive: ${response.status} ${await response.text()}`);
+    }
+
     return await response.text();
-  } catch {
-    return null;
   }
+
+  const encodedPath = getRemotePath(config).split("/").map((segment) => encodeURIComponent(segment)).join("/");
+  const response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:/${encodedPath}:/content`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (response.status === 404) return null;
+
+  if (!response.ok) {
+    throw new Error(`Erro ao ler arquivo no OneDrive: ${response.status} ${await response.text()}`);
+  }
+
+  return await response.text();
 }
 
 async function writeRemoteFile(config: CloudSyncConfig, content: string) {
@@ -961,60 +1004,208 @@ async function writeRemoteFile(config: CloudSyncConfig, content: string) {
   }
 }
 
-export async function syncCloudData(provider: CloudProvider = readCloudSyncConfig().provider): Promise<{ action: "uploaded" | "downloaded" | "skipped"; message: string }> {
+export async function syncCloudData(
+  provider: CloudProvider = readCloudSyncConfig().provider
+): Promise<{ action: "uploaded" | "downloaded" | "skipped"; message: string }> {
   const config = readCloudSyncConfig(provider);
+
   if (!config.enabled) {
     throw new Error("Ative a sincronização antes de enviar ou baixar os dados da nuvem.");
   }
 
   const localPayload = makeCloudPayload();
+  const localSignature = fnv1aHash(
+    stableStringify({
+      data: localPayload.data,
+      settings: localPayload.settings,
+    })
+  );
+
   const localPayloadJson = JSON.stringify(localPayload, null, 2);
-  if (!localPayloadJson || !localPayloadJson.trim()) {
-    throw new Error("Não há dados locais válidos para sincronização.");
-  }
+  const baselineKey = `brewcraft-cloud-baseline-${provider}`;
+  const lastSyncedRevision = localStorage.getItem(baselineKey);
 
   const remoteText = await readRemoteFile(config);
 
-  if (remoteText) {
-    try {
-      const remotePayload = JSON.parse(remoteText) as Record<string, unknown>;
-      const remoteUpdatedAt = pickUpdatedAt(remotePayload);
-      const localUpdatedAt = pickUpdatedAt(localPayload);
-      const remoteRevision = pickRevision(remotePayload);
-      const localRevision = pickRevision(localPayload);
-      const remoteSignature = fnv1aHash(stableStringify({ data: remotePayload.data ?? {}, settings: remotePayload.settings ?? {} }));
-      const localSignature = fnv1aHash(stableStringify({ data: localPayload.data, settings: localPayload.settings }));
+  // Não existe arquivo na nuvem: primeiro envio.
+  if (!remoteText) {
+    await writeRemoteFile(config, localPayloadJson);
 
-      if (remoteUpdatedAt && localUpdatedAt && remoteUpdatedAt > localUpdatedAt) {
-        restoreBackup(remotePayload);
-        saveCloudSyncConfig({ provider: config.provider, lastSyncAt: new Date().toISOString(), lastSyncStatus: "Dados baixados da nuvem" });
-        return { action: "downloaded", message: "Dados recebidos da nuvem e restaurados localmente." };
-      }
+    localStorage.setItem(baselineKey, localSignature);
 
-      if (remoteUpdatedAt && localUpdatedAt && remoteUpdatedAt < localUpdatedAt) {
-        await writeRemoteFile(config, localPayloadJson);
-        saveCloudSyncConfig({ provider: config.provider, lastSyncAt: new Date().toISOString(), lastSyncStatus: "Dados enviados para a nuvem" });
-        return { action: "uploaded", message: "Dados locais enviados para a nuvem." };
-      }
+    saveCloudSyncConfig({
+      provider,
+      lastSyncAt: new Date().toISOString(),
+      lastSyncStatus: "Dados enviados para a nuvem",
+    });
 
-      if (remoteUpdatedAt && localUpdatedAt && remoteUpdatedAt === localUpdatedAt && remoteSignature !== localSignature) {
-        localStorage.setItem("brewfather-cloud-conflict", JSON.stringify({ provider: config.provider, remotePayload, localPayload, createdAt: new Date().toISOString() }));
-        saveCloudSyncConfig({ provider: config.provider, lastSyncAt: new Date().toISOString(), lastSyncStatus: "Conflito detectado entre alterações locais e remotas" });
-        return { action: "skipped", message: "Conflito detectado: a versão local e a remota diferiram. Nenhuma alteração foi sobrescrita." };
-      }
+    return {
+      action: "uploaded",
+      message: "Dados locais enviados para a nuvem.",
+    };
+  }
 
-      if (remoteRevision && localRevision && remoteRevision === localRevision && remoteUpdatedAt === localUpdatedAt) {
-        saveCloudSyncConfig({ provider: config.provider, lastSyncAt: new Date().toISOString(), lastSyncStatus: "Dados já sincronizados" });
-        return { action: "skipped", message: "Os dados já estavam sincronizados." };
-      }
-    } catch {
-      // If the remote file is invalid, we upload the local data to replace it.
+  // Arquivo remoto precisa ser JSON válido.
+  let remotePayload: Record<string, unknown>;
+
+  try {
+    remotePayload = JSON.parse(remoteText);
+  } catch {
+    throw new Error(
+      "O arquivo da nuvem está inválido. Nenhum dado foi sobrescrito."
+    );
+  }
+
+  if (
+    !remotePayload ||
+    typeof remotePayload !== "object" ||
+    !remotePayload.data ||
+    typeof remotePayload.data !== "object" ||
+    Array.isArray(remotePayload.data)
+  ) {
+    throw new Error(
+      "O backup da nuvem possui estrutura inválida. Nenhum dado foi sobrescrito."
+    );
+  }
+
+  const requiredCollections = [
+    "receitas",
+    "lotes",
+    "inventário",
+    "perfil-equipamento",
+    "perfil-mostura",
+    "perfil-fermentacao",
+    "perfil-agua",
+    "perfil-estilos",
+  ];
+
+  const remoteData = remotePayload.data as Record<string, unknown>;
+
+  for (const collection of requiredCollections) {
+    if (!Array.isArray(remoteData[collection])) {
+      throw new Error(
+        `A coleção "${collection}" não existe ou está inválida no backup remoto. Nenhum dado foi sobrescrito.`
+      );
     }
   }
 
-  await writeRemoteFile(config, localPayloadJson);
-  saveCloudSyncConfig({ provider: config.provider, lastSyncAt: new Date().toISOString(), lastSyncStatus: "Dados enviados para a nuvem" });
-  return { action: "uploaded", message: "Dados enviados para a nuvem." };
+  const remoteSignature = fnv1aHash(
+    stableStringify({
+      data: remotePayload.data,
+      settings: remotePayload.settings ?? {},
+    })
+  );
+
+  // As duas versões são iguais.
+  if (localSignature === remoteSignature) {
+    localStorage.setItem(baselineKey, localSignature);
+
+    saveCloudSyncConfig({
+      provider,
+      lastSyncAt: new Date().toISOString(),
+      lastSyncStatus: "Dados já sincronizados",
+    });
+
+    return {
+      action: "skipped",
+      message: "Os dados já estavam sincronizados.",
+    };
+  }
+
+  // Primeira sincronização com arquivo remoto existente:
+  // não escolher automaticamente qual versão deve prevalecer.
+  if (!lastSyncedRevision) {
+    localStorage.setItem(
+      "brewfather-cloud-conflict",
+      JSON.stringify({
+        provider,
+        remotePayload,
+        localPayload,
+        createdAt: new Date().toISOString(),
+        reason: "first-sync",
+      })
+    );
+
+    saveCloudSyncConfig({
+      provider,
+      lastSyncStatus: "Primeira sincronização: escolha entre as versões",
+    });
+
+    return {
+      action: "skipped",
+      message:
+        "Já existe um backup na nuvem diferente dos dados locais. Escolha qual versão deseja preservar.",
+    };
+  }
+
+  const localChanged = localSignature !== lastSyncedRevision;
+  const remoteChanged = remoteSignature !== lastSyncedRevision;
+
+  // Os dois lados mudaram desde a última sincronização.
+  if (localChanged && remoteChanged) {
+    localStorage.setItem(
+      "brewfather-cloud-conflict",
+      JSON.stringify({
+        provider,
+        remotePayload,
+        localPayload,
+        createdAt: new Date().toISOString(),
+        reason: "both-changed",
+      })
+    );
+
+    saveCloudSyncConfig({
+      provider,
+      lastSyncStatus: "Conflito entre dados locais e remotos",
+    });
+
+    return {
+      action: "skipped",
+      message:
+        "Os dados locais e remotos foram alterados. Nenhuma versão foi sobrescrita.",
+    };
+  }
+
+  // Somente a nuvem mudou.
+  if (remoteChanged) {
+    restoreBackup(remotePayload);
+
+    localStorage.setItem(baselineKey, remoteSignature);
+
+    saveCloudSyncConfig({
+      provider,
+      lastSyncAt: new Date().toISOString(),
+      lastSyncStatus: "Dados baixados da nuvem",
+    });
+
+    return {
+      action: "downloaded",
+      message: "Dados recebidos da nuvem e restaurados localmente.",
+    };
+  }
+
+  // Somente o computador mudou.
+  if (localChanged) {
+    await writeRemoteFile(config, localPayloadJson);
+
+    localStorage.setItem(baselineKey, localSignature);
+
+    saveCloudSyncConfig({
+      provider,
+      lastSyncAt: new Date().toISOString(),
+      lastSyncStatus: "Dados enviados para a nuvem",
+    });
+
+    return {
+      action: "uploaded",
+      message: "Dados locais enviados para a nuvem.",
+    };
+  }
+
+  return {
+    action: "skipped",
+    message: "Nenhuma alteração detectada.",
+  };
 }
 
 export function getSyncFilePath(config: CloudSyncConfig) {

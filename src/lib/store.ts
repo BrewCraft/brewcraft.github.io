@@ -1,11 +1,55 @@
 /** Browser-local persistence for recipes, batches and inventory, with cross-component sync. */
 import { useCallback, useEffect, useState } from "react";
 import { defaultEquipment, type Batch, type InventoryItem, type Recipe } from "./recipe-calc";
+import { readCloudSyncConfig, syncCloudData } from "./cloud-sync";
 import { getLocale, readSettings } from "./settings";
 
 const KEYS = { recipes: "brewfather-recipes", batches: "brewfather-batches", inventory: "brewfather-inventory" } as const;
 type Key = keyof typeof KEYS;
 const EVENT = "brewfather-store";
+
+
+let autoSyncTimer: ReturnType<typeof setTimeout> | undefined;
+let autoSyncRunning = false;
+let autoSyncPending = false;
+
+function triggerAutoSync() {
+  if (autoSyncTimer) clearTimeout(autoSyncTimer);
+
+  autoSyncTimer = setTimeout(() => {
+    void runAutoSync();
+  }, 1000);
+}
+
+async function runAutoSync() {
+  if (autoSyncRunning) {
+    autoSyncPending = true;
+    return;
+  }
+
+  autoSyncRunning = true;
+
+  try {
+    do {
+      autoSyncPending = false;
+
+      const provider = readCloudSyncConfig().provider;
+      const config = readCloudSyncConfig(provider);
+
+      if (!config.enabled || !config.token) return;
+
+      await syncCloudData(provider);
+    } while (autoSyncPending);
+  } catch (error) {
+    console.error("Erro na sincronização automática:", error);
+  } finally {
+    autoSyncRunning = false;
+
+    if (autoSyncPending) {
+      triggerAutoSync();
+    }
+  }
+}
 
 export const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
 
@@ -44,6 +88,7 @@ export function read<T>(key: Key): T[] {
 export function write<T>(key: Key, value: T[]) {
   localStorage.setItem(KEYS[key], JSON.stringify(value));
   window.dispatchEvent(new CustomEvent(EVENT, { detail: key }));
+  void triggerAutoSync();
 }
 
 function useCollection<T>(key: Key) {
@@ -78,6 +123,6 @@ export function allStyles(): BjcpStyle[] {
     const v = p.values; const around = (x: number): [number, number] => [x * 0.9, x * 1.1];
     return { code: `custom-${p.id}`, name: `${p.name} (personalizado)`, og: [num(v.ogMin, 1.04), num(v.ogMax, 1.06)], fg: [num(v.fgMin, 1.008), num(v.fgMax, 1.014)], ibu: around(num(v.ibu, 30)), srm: around(num(v.srm, 8)), abv: around(num(v.abv, 5)) } as BjcpStyle;
   });
-  return [...bjcpStyles, ...custom];
+  return [...bjcpStyles, ...custom].sort((a, b) => a.name.localeCompare(b.name, "pt-BR") || a.code.localeCompare(b.code));
 }
 export const profileNumber = num;
