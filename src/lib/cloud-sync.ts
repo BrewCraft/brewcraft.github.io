@@ -179,8 +179,15 @@ function randomUrlSafeToken(length = 32) {
 
 function getRedirectUri() {
   if (typeof window === "undefined") return "http://localhost:8080";
+
   const origin = window.location.origin;
-  return origin && origin !== "null" ? origin : "http://localhost:8080";
+  if (!origin || origin === "null") {
+    return "http://localhost:8080";
+  }
+
+  const pathname = window.location.pathname || "/";
+  const normalizedPath = pathname.endsWith("/") ? pathname : `${pathname}/`;
+  return `${origin}${normalizedPath}`;
 }
 
 function getProviderEnvName(provider: CloudProvider) {
@@ -328,8 +335,9 @@ export function openCloudAuth(provider: CloudProvider) {
   if (!url) {
     return false;
   }
-  window.open(url, "brewcraft-cloud-auth", "width=520,height=700,noopener,noreferrer");
-  return true;
+
+  const popup = window.open(url, "brewcraft-cloud-auth", "width=520,height=700");
+  return Boolean(popup);
 }
 
 export function captureCloudTokenFromUrl(provider: CloudProvider) {
@@ -621,29 +629,63 @@ async function startProviderAuth(provider: CloudProvider) {
 
   const timeoutMs = 180000;
   const startedAt = Date.now();
+  let settled = false;
 
   return await new Promise<ProviderSession>((resolve, reject) => {
     const cleanup = () => {
-      window.clearInterval(intervalId);
-      window.clearTimeout(timer);
-      popup.close();
+      if (intervalId) {
+        window.clearInterval(intervalId);
+      }
+      if (timerId) {
+        window.clearTimeout(timerId);
+      }
+      try {
+        popup.close();
+      } catch {
+        // popup may already be closed or cross-origin.
+      }
       writePkceState(provider, null);
     };
 
-    const timer = window.setTimeout(() => {
+    const rejectOnce = (message: string) => {
+      if (settled) return;
+      settled = true;
       cleanup();
-      reject(new Error("Tempo limite da autenticação excedido."));
+      reject(new Error(message));
+    };
+
+    const resolveOnce = async (session: ProviderSession) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(session);
+    };
+
+    const timerId = window.setTimeout(() => {
+      rejectOnce("Tempo limite da autenticação excedido.");
     }, timeoutMs - (Date.now() - startedAt));
 
     const intervalId = window.setInterval(async () => {
       try {
-        if (popup.closed) {
-          cleanup();
-          reject(new Error("A janela de autenticação foi fechada antes da conclusão."));
+        try {
+          if (popup.closed === true) {
+            rejectOnce("A janela de autenticação foi fechada antes da conclusão.");
+            return;
+          }
+        } catch {
+          // Accessing popup.closed can be blocked while the popup is still cross-origin.
+        }
+
+        let popupUrl: string | null = null;
+        try {
+          popupUrl = popup.location?.href ?? null;
+        } catch {
+          // popup is still cross-origin. Wait until it returns to this origin.
           return;
         }
 
-        const popupUrl = popup.location.href;
+        if (!popupUrl) return;
+
         const targetUrl = new URL(popupUrl);
         if (targetUrl.origin !== window.location.origin) {
           return;
@@ -655,8 +697,7 @@ async function startProviderAuth(provider: CloudProvider) {
         const errorDescription = targetUrl.searchParams.get("error_description");
 
         if (error) {
-          cleanup();
-          reject(new Error(errorDescription || error || "A autenticação foi cancelada pelo provedor."));
+          rejectOnce(errorDescription || error || "A autenticação foi cancelada pelo provedor.");
           return;
         }
 
@@ -665,15 +706,14 @@ async function startProviderAuth(provider: CloudProvider) {
           return;
         }
 
-        cleanup();
         try {
           const session = await exchangeCodeForToken(provider, code, pkceInfo.verifier, redirectUri);
-          resolve(session);
+          await resolveOnce(session);
         } catch (error) {
-          reject(error instanceof Error ? error : new Error("Não foi possível completar a autenticação."));
+          rejectOnce(error instanceof Error ? error.message : "Não foi possível completar a autenticação.");
         }
       } catch {
-        // popup is still cross-origin, so ignore it until it returns to the app origin.
+        // cross-origin / callback not ready yet; keep waiting until the provider redirects back.
       }
     }, 350);
   });
