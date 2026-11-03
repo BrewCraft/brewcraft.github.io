@@ -1,0 +1,10 @@
+name = "brewcraft-google-oauth"
+main = "src/index.ts"
+compatibility_date = "2024-09-01"
+
+[[kv_namespaces]]
+binding = "GOOGLE_SESSIONS"
+id = "4dacdd78354b482791b4c4db47930976"
+
+[vars]
+ALLOWED_ORIGINS = "https://brewcraft.github.io,http://localhost:8080"

@@ -24,12 +24,16 @@ export type GoogleDriveFile = {
 type ProviderSession = {
   accessToken: string;
   refreshToken?: string;
+  sessionId?: string;
   expiresAt: number;
   accountName?: string;
   accountEmail?: string;
   syncFileId?: string;
   syncFileName?: string;
 };
+
+const GOOGLE_DRIVE_WORKER_URL = "https://brewcraft-google-oauth.clanbalakent.workers.dev";
+const GOOGLE_OAUTH_STATE_URL = `${GOOGLE_DRIVE_WORKER_URL}/oauth/state`;
 
 const LEGACY_CLOUD_SYNC_KEY = "brewfather-cloud-sync";
 const CLOUD_SYNC_KEY_PREFIX = "brewfather-cloud-sync-";
@@ -236,11 +240,11 @@ export function readCloudSyncConfig(provider?: CloudProvider): CloudSyncConfig {
   try {
     const raw = safeJsonParse(localStorage.getItem(getProviderConfigKey(targetProvider)), null) as Partial<CloudSyncConfig> | null;
     const base = readLegacyCloudSyncConfig();
-    const legacyProvider = normalizeCloudProvider(base?.provider ?? defaultCloudSyncConfig.provider); 
+    const legacyProvider = normalizeCloudProvider(base?.provider ?? defaultCloudSyncConfig.provider);
     const migrated = !raw && legacyProvider === targetProvider ? base : raw;
 
     const sessionToken = readProviderSession(targetProvider)?.accessToken ?? "";
-    const fallbackToken = typeof migrated?.token === "string" ? migrated.token : "";
+    const fallbackToken = targetProvider === "google-drive" ? "" : typeof migrated?.token === "string" ? migrated.token : "";
     const token = sessionToken || fallbackToken;
 
     const config: CloudSyncConfig = {
@@ -277,7 +281,7 @@ export function saveCloudSyncConfig(patch: Partial<CloudSyncConfig>) {
     fileName: next.fileName.trim() || defaultCloudSyncConfig.fileName,
     lastSyncAt: next.lastSyncAt,
     lastSyncStatus: next.lastSyncStatus || defaultCloudSyncConfig.lastSyncStatus,
-    token: next.token || "",
+    token: provider === "google-drive" ? "" : next.token || "",
   };
 
   const session = readProviderSession(provider);
@@ -424,10 +428,69 @@ const providerRequestMeta = {
   },
 } as const;
 
-async function exchangeCodeForToken(provider: CloudProvider, code: string, verifier: string, redirectUri: string): Promise<ProviderSession> {
+async function exchangeCodeForToken(
+  provider: CloudProvider,
+  code: string,
+  verifier: string,
+  redirectUri: string,
+  state?: string,
+): Promise<ProviderSession> {
   const clientId = getProviderClientId(provider);
   if (!clientId) {
     throw new Error(`Falta VITE_${getProviderEnvName(provider)}_CLIENT_ID no ambiente do frontend.`);
+  }
+
+  if (provider === "google-drive") {
+    const workerResponse = await fetch(`${GOOGLE_DRIVE_WORKER_URL}/oauth/exchange`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        code,
+        redirectUri,
+        state,
+        origin: window.location.origin,
+      }),
+    });
+
+    const data = (await workerResponse.json().catch(() => ({}))) as {
+      ok?: boolean;
+      accessToken?: string;
+      sessionId?: string;
+      expiresIn?: number | string;
+      error?: string;
+      message?: string;
+    };
+
+    if (!workerResponse.ok || !data.ok || !data.accessToken || !data.sessionId) {
+      throw new Error(data.message || data.error || "Não foi possível trocar o código do Google pelo token da sessão.");
+    }
+
+    const nextExpiresAt = Date.now() + (Number(data.expiresIn ?? 3600) * 1000);
+    const session = readProviderSession(provider);
+    const connectedSession: ProviderSession = {
+      accessToken: data.accessToken,
+      sessionId: data.sessionId,
+      expiresAt: nextExpiresAt,
+      accountName: session?.accountName,
+    };
+
+    const profileName = await fetchProviderAccountName(provider, connectedSession.accessToken);
+    if (profileName) {
+      connectedSession.accountName = profileName;
+    }
+
+    writeProviderSession(provider, connectedSession);
+    saveCloudSyncConfig({
+      provider,
+      enabled: true,
+      token: connectedSession.accessToken,
+      lastSyncStatus: `Conectado ao ${cloudProviderLabels[provider]}`,
+    });
+
+    return connectedSession;
   }
 
   const params = new URLSearchParams({
@@ -521,6 +584,53 @@ async function refreshProviderToken(provider: CloudProvider, refreshToken: strin
     throw new Error(`Falta VITE_${getProviderEnvName(provider)}_CLIENT_ID no ambiente do frontend.`);
   }
 
+  if (provider === "google-drive") {
+    const session = readProviderSession(provider);
+    const sessionId = session?.sessionId ?? refreshToken;
+    const workerResponse = await fetch(`${GOOGLE_DRIVE_WORKER_URL}/oauth/refresh`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${sessionId}`,
+      },
+      body: JSON.stringify({
+        origin: window.location.origin,
+      }),
+    });
+
+    const data = (await workerResponse.json().catch(() => ({}))) as {
+      ok?: boolean;
+      accessToken?: string;
+      sessionId?: string;
+      expiresIn?: number | string;
+      error?: string;
+      message?: string;
+    };
+
+    if (!workerResponse.ok || !data.ok || !data.accessToken || !data.sessionId) {
+      throw new Error(data.message || data.error || `Não foi possível renovar o token do ${cloudProviderLabels[provider]}.`);
+    }
+
+    const refreshed: ProviderSession = {
+      ...(session ?? { accessToken: "", expiresAt: 0 }),
+      accessToken: data.accessToken,
+      sessionId: data.sessionId,
+      expiresAt: Date.now() + (Number(data.expiresIn ?? 3600) * 1000),
+    };
+
+    if (!refreshed.accountName) {
+      const profileName = await fetchProviderAccountName(provider, refreshed.accessToken);
+      if (profileName) {
+        refreshed.accountName = profileName;
+      }
+    }
+
+    writeProviderSession(provider, refreshed);
+    saveCloudSyncConfig({ provider, enabled: true, token: refreshed.accessToken, lastSyncStatus: `Token renovado do ${cloudProviderLabels[provider]}` });
+    return refreshed;
+  }
+
   const response = await fetch(providerRequestMeta[provider].tokenUrl, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -570,10 +680,11 @@ async function ensureAccessToken(provider: CloudProvider) {
   }
 
   if (Date.now() >= session.expiresAt - 60_000) {
-    if (!session.refreshToken) {
+    const refreshKey = provider === "google-drive" ? (session.sessionId ?? session.refreshToken ?? "") : session.refreshToken;
+    if (!refreshKey) {
       throw new Error(`A sessão do ${cloudProviderLabels[provider]} expirou e não há um refresh token disponível.`);
     }
-    const refreshedSession = await refreshProviderToken(provider, session.refreshToken);
+    const refreshedSession = await refreshProviderToken(provider, refreshKey);
     return refreshedSession.accessToken;
   }
 
@@ -615,6 +726,150 @@ function buildAuthUrlForProvider(provider: CloudProvider, challenge: string, sta
 
 async function startProviderAuth(provider: CloudProvider) {
   const redirectUri = getRedirectUri();
+
+  if (provider === "google-drive") {
+    const popup = window.open("about:blank", "brewcraft-cloud-auth", "width=520,height=700");
+    if (!popup) {
+      throw new Error("O navegador bloqueou a janela de autenticação. Permita pop-ups para continuar.");
+    }
+
+    const timeoutMs = 180000;
+    const startedAt = Date.now();
+    let settled = false;
+    let intervalId: number | undefined;
+    let timerId: number | undefined;
+
+    const cleanup = () => {
+      if (intervalId !== undefined) {
+        window.clearInterval(intervalId);
+      }
+      if (timerId !== undefined) {
+        window.clearTimeout(timerId);
+      }
+      try {
+        popup.close();
+      } catch {
+        // popup may already be closed or cross-origin.
+      }
+    };
+
+    const rejectOnce = (message: string) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      throw new Error(message);
+    };
+
+    const resolveOnce = async (session: ProviderSession) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      return session;
+    };
+
+    const promise = new Promise<ProviderSession>((resolve, reject) => {
+      const rejectOncePromise = (message: string) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new Error(message));
+      };
+
+      const resolveOncePromise = async (session: ProviderSession) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(session);
+      };
+
+      timerId = window.setTimeout(() => {
+        rejectOncePromise("Tempo limite da autenticação excedido.");
+      }, timeoutMs - (Date.now() - startedAt));
+
+      intervalId = window.setInterval(async () => {
+        try {
+          try {
+            if (popup.closed === true) {
+              rejectOncePromise("A janela de autenticação foi fechada antes da conclusão.");
+              return;
+            }
+          } catch {
+            // Accessing popup.closed can be blocked while the popup is still cross-origin.
+          }
+
+          let popupUrl: string | null = null;
+          try {
+            popupUrl = popup.location?.href ?? null;
+          } catch {
+            return;
+          }
+
+          if (!popupUrl) return;
+          const targetUrl = new URL(popupUrl);
+          if (targetUrl.origin !== window.location.origin) {
+            return;
+          }
+
+          const code = targetUrl.searchParams.get("code");
+          const returnedState = targetUrl.searchParams.get("state");
+          const error = targetUrl.searchParams.get("error");
+          const errorDescription = targetUrl.searchParams.get("error_description");
+
+          if (error) {
+            rejectOncePromise(errorDescription || error || "A autenticação foi cancelada pelo provedor.");
+            return;
+          }
+
+          if (!code || !returnedState) {
+            return;
+          }
+
+          try {
+            const session = await exchangeCodeForToken(provider, code, "", redirectUri, returnedState);
+            await resolveOncePromise(session);
+          } catch (error) {
+            rejectOncePromise(error instanceof Error ? error.message : "Não foi possível completar a autenticação.");
+          }
+        } catch {
+          // cross-origin / callback not ready yet; keep waiting.
+        }
+      }, 350);
+    });
+
+    try {
+      const workerResponse = await fetch(`${GOOGLE_DRIVE_WORKER_URL}/oauth/start`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          redirectUri,
+          origin: window.location.origin,
+        }),
+      });
+
+      const data = (await workerResponse.json().catch(() => ({}))) as {
+        ok?: boolean;
+        authUrl?: string;
+        state?: string;
+        error?: string;
+        message?: string;
+      };
+
+      if (!workerResponse.ok || !data.ok || !data.authUrl) {
+        cleanup();
+        throw new Error(data.message || data.error || "Não foi possível iniciar a autenticação do Google Drive.");
+      }
+
+      popup.location.href = data.authUrl;
+      return await promise;
+    } catch (error) {
+      cleanup();
+      throw error instanceof Error ? error : new Error("Não foi possível iniciar a autenticação do Google Drive.");
+    }
+  }
+
   const verifier = randomUrlSafeToken(64);
   const challenge = await sha256Base64Url(verifier);
   const state = randomUrlSafeToken(32);
@@ -737,7 +992,26 @@ export async function connectProvider(provider: CloudProvider) {
 
 export async function disconnectProvider(provider: CloudProvider) {
   const session = readProviderSession(provider);
-  if (session?.accessToken) {
+  if (provider === "google-drive") {
+    try {
+      const sessionId = session?.sessionId;
+      if (sessionId) {
+        await fetch(`${GOOGLE_DRIVE_WORKER_URL}/oauth/disconnect`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            Authorization: `Bearer ${sessionId}`,
+          },
+          body: JSON.stringify({
+            origin: window.location.origin,
+          }),
+        });
+      }
+    } catch {
+      // ignore revocation errors; a local disconnect is still allowed.
+    }
+  } else if (session?.accessToken) {
     try {
       if (provider === "google-drive") {
         await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(session.accessToken)}`, { method: "POST" });

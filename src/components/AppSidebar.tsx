@@ -14,7 +14,7 @@ import {
   CookingPot,
   BookOpen,
   Clock3,
-  Cloud,
+  Sparkles,
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useSettings } from "@/lib/settings";
@@ -64,6 +64,7 @@ export function AppSidebar() {
     { title: t("Receitas", "Recipes"), url: "/recipes", icon: FileText },
     { title: t("Lotes", "Batches"), url: "/batches", icon: Beaker },
     { title: t("Inventário", "Inventory"), url: "/inventory", icon: Package },
+    { title: t("Assistente IA", "AI Assistant"), url: "/ai-assistant", icon: Sparkles },
   ];
 
   const toolsItems = [
