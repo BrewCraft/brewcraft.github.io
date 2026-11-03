@@ -52,8 +52,10 @@ export class GeminiService {
 
   constructor(apiKey: string) {
     this.genAI = new GoogleGenerativeAI(apiKey);
+    const modelName = import.meta.env.VITE_GEMINI_MODEL ?? "gemini-2.0-flash";
+
     this.model = this.genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
+      model: modelName,
       systemInstruction: SYSTEM_PROMPT,
     });
   }
