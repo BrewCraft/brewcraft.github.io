@@ -97,7 +97,7 @@ export default function SettingsPage() {
     setDraftCloudConfig(next);
   };
 
-  const handleSaveCloudConfig = async () => {
+  const handleSaveCloudConfig = () => {
     const next = saveCloudSyncConfig({ ...draftCloudConfig, provider: selectedProvider, enabled: draftCloudConfig.enabled });
     setCloudConfig(next);
     setDraftCloudConfig(next);
@@ -107,12 +107,7 @@ export default function SettingsPage() {
       return;
     }
 
-    try {
-      const result = await syncCloudData(selectedProvider);
-      setCloudSyncMsg({ ok: true, text: `Sincronização concluída: ${result.message}` });
-    } catch (error) {
-      setCloudSyncMsg({ ok: false, text: error instanceof Error ? error.message : "Não foi possível sincronizar." });
-    }
+    setCloudSyncMsg({ ok: true, text: `Configuração salva para ${cloudProviderLabels[selectedProvider]}.` });
   };
 
   const handleConnectProvider = async (provider: CloudProvider) => {
@@ -294,6 +289,7 @@ export default function SettingsPage() {
                       </Button>
                     )}
                     <Button size="sm" variant="default" onClick={() => void handleSyncProvider(provider)}>
+                      <RefreshCw className="h-4 w-4 mr-2" />
                       Sincronizar
                     </Button>
                   </div>
@@ -344,6 +340,7 @@ export default function SettingsPage() {
                 setDraftCloudConfig(next);
                 saveCloudSyncConfig(next);
                 setCloudConfig(next);
+                setCloudSyncMsg({ ok: true, text: `Sincronização ativada para ${cloudProviderLabels[selectedProvider]}.` });
               }}
             >
               Ativar sincronização
@@ -355,12 +352,13 @@ export default function SettingsPage() {
                 setDraftCloudConfig(next);
                 saveCloudSyncConfig(next);
                 setCloudConfig(next);
+                setCloudSyncMsg({ ok: true, text: `Sincronização desativada para ${cloudProviderLabels[selectedProvider]}.` });
               }}
             >
               Desativar
             </Button>
-            <Button onClick={() => void handleSaveCloudConfig()} className="bg-gradient-primary hover:bg-primary-glow text-primary-foreground shadow-brew">
-              Salvar e sincronizar
+            <Button onClick={() => handleSaveCloudConfig()} className="bg-gradient-primary hover:bg-primary-glow text-primary-foreground shadow-brew">
+              Salvar
             </Button>
           </div>
 
@@ -370,12 +368,6 @@ export default function SettingsPage() {
               : "Ative a sincronização e conecte um provedor para sincronizar os dados."}
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <Button onClick={() => void handleSyncProvider(selectedProvider)} className="bg-gradient-primary hover:bg-primary-glow text-primary-foreground shadow-brew">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Sincronizar agora
-            </Button>
-          </div>
         </CardContent>
       </Card>
 
@@ -415,12 +407,12 @@ export default function SettingsPage() {
           role="status"
           className={
             cloudSyncMsg.ok
-              ? "flex items-center gap-2 rounded-md border border-success/40 bg-success/10 px-4 py-3 text-sm text-foreground"
-              : "flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-foreground"
+              ? "flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-900 dark:text-emerald-200"
+              : "flex items-center gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-900 dark:text-red-200"
           }
         >
           <CheckCircle2 className="h-4 w-4 shrink-0" />
-          {cloudSyncMsg.text}
+          <span>{cloudSyncMsg.text}</span>
         </div>
       )}
 
