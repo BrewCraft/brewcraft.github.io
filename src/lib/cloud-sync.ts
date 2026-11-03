@@ -131,7 +131,8 @@ function getPkceKey(provider: CloudProvider) {
 }
 
 function readProviderSession(provider: CloudProvider): ProviderSession | null {
-  const raw = sessionStorage.getItem(getSessionKey(provider));
+
+  const raw = localStorage.getItem(getSessionKey(provider));
   const parsed = safeJsonParse(raw, null) as ProviderSession | null;
   if (!parsed || typeof parsed.accessToken !== "string") return null;
   return parsed;
@@ -140,23 +141,28 @@ function readProviderSession(provider: CloudProvider): ProviderSession | null {
 function writeProviderSession(provider: CloudProvider, session: ProviderSession | null) {
   const key = getSessionKey(provider);
   if (!session) {
-    sessionStorage.removeItem(key);
+
+    localStorage.removeItem(key);
     return;
   }
-  sessionStorage.setItem(key, JSON.stringify(session));
+
+  localStorage.setItem(key, JSON.stringify(session));
 }
 
 function readPkceState(provider: CloudProvider) {
-  return safeJsonParse(sessionStorage.getItem(getPkceKey(provider)), null) as { verifier: string; state: string } | null;
+
+  return safeJsonParse(localStorage.getItem(getPkceKey(provider)), null) as { verifier: string; state: string } | null;
 }
 
 function writePkceState(provider: CloudProvider, value: { verifier: string; state: string } | null) {
   const key = getPkceKey(provider);
   if (!value) {
-    sessionStorage.removeItem(key);
+
+    localStorage.removeItem(key);
     return;
   }
-  sessionStorage.setItem(key, JSON.stringify(value));
+
+  localStorage.setItem(key, JSON.stringify(value));
 }
 
 function base64UrlEncode(value: ArrayBuffer | Uint8Array) {
@@ -325,6 +331,7 @@ export async function getCloudOAuthUrl(provider: CloudProvider, redirectUri: str
   });
 
   if (provider === "dropbox") {
+    params.set("token_access_type", "offline");
     return `https://www.dropbox.com/oauth2/authorize?${params.toString()}`;
   }
 
@@ -679,18 +686,42 @@ async function refreshProviderToken(provider: CloudProvider, refreshToken: strin
 }
 
 async function ensureAccessToken(provider: CloudProvider) {
-  const session = readProviderSession(provider);
+
+  let session = readProviderSession(provider);
+
+  if (!session?.accessToken) {
+    const config = readCloudSyncConfig(provider);
+    if (config.token && provider !== "google-drive") {
+      session = {
+        accessToken: config.token,
+        expiresAt: 0, // Força tentativa de refresh se possível ou usa o token atual
+      };
+    }
+  }
+
   if (!session?.accessToken) {
     throw new Error(`Você precisa conectar sua conta do ${cloudProviderLabels[provider]} antes de sincronizar.`);
   }
 
-  if (Date.now() >= session.expiresAt - 60_000) {
+
+  // Se o token expirou (ou vai expirar em 1 min)
+  if (session.expiresAt > 0 && Date.now() >= session.expiresAt - 60_000) {
     const refreshKey = provider === "google-drive" ? (session.sessionId ?? session.refreshToken ?? "") : session.refreshToken;
     if (!refreshKey) {
-      throw new Error(`A sessão do ${cloudProviderLabels[provider]} expirou e não há um refresh token disponível.`);
+
+      // Se não tem refresh token mas temos um access token que achamos que expirou,
+      // tentamos usar ele mesmo assim uma última vez (pode ser que o expiresAt esteja errado)
+      return session.accessToken;
     }
-    const refreshedSession = await refreshProviderToken(provider, refreshKey);
-    return refreshedSession.accessToken;
+
+
+    try {
+      const refreshedSession = await refreshProviderToken(provider, refreshKey);
+      return refreshedSession.accessToken;
+    } catch (error) {
+      console.error("Erro ao renovar token:", error);
+      return session.accessToken;
+    }
   }
 
   return session.accessToken;
@@ -713,6 +744,7 @@ function buildAuthUrlForProvider(provider: CloudProvider, challenge: string, sta
 
   if (provider === "dropbox") {
     params.set("scope", "files.content.write files.content.read account_info.read");
+    params.set("token_access_type", "offline");
     return `https://www.dropbox.com/oauth2/authorize?${params.toString()}`;
   }
 
@@ -890,13 +922,16 @@ async function startProviderAuth(provider: CloudProvider) {
   const timeoutMs = 180000;
   const startedAt = Date.now();
   let settled = false;
+  let isExchangingCode = false;
+  let intervalId: number | undefined;
+  let timerId: number | undefined;
 
   return await new Promise<ProviderSession>((resolve, reject) => {
     const cleanup = () => {
-      if (intervalId) {
+      if (intervalId !== undefined) {
         window.clearInterval(intervalId);
       }
-      if (timerId) {
+      if (timerId !== undefined) {
         window.clearTimeout(timerId);
       }
       try {
@@ -921,11 +956,11 @@ async function startProviderAuth(provider: CloudProvider) {
       resolve(session);
     };
 
-    const timerId = window.setTimeout(() => {
+    timerId = window.setTimeout(() => {
       rejectOnce("Tempo limite da autenticação excedido.");
     }, timeoutMs - (Date.now() - startedAt));
 
-    const intervalId = window.setInterval(async () => {
+    intervalId = window.setInterval(async () => {
       try {
         try {
           if (popup.closed === true) {
@@ -964,6 +999,15 @@ async function startProviderAuth(provider: CloudProvider) {
         const pkceInfo = readPkceState(provider);
         if (!code || !returnedState || !pkceInfo || returnedState !== pkceInfo.state) {
           return;
+        }
+
+        if (isExchangingCode) {
+          return;
+        }
+
+        isExchangingCode = true;
+        if (intervalId !== undefined) {
+          window.clearInterval(intervalId);
         }
 
         try {
