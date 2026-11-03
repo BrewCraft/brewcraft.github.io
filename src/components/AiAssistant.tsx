@@ -64,15 +64,14 @@ export default function AiAssistant() {
 
     try {
       const gemini = new GeminiService(apiKey);
-      
-      // Context for the AI: we can send the list of recipes or current settings
+
       const context = {
         recipeCount: recipes.length,
         recipes: recipes.map(r => ({ name: r.name, style: r.styleCode }))
       };
 
       const responseText = await gemini.chat([...messages, userMessage], context);
-      
+
       const assistantMessage: Message = {
         role: "model",
         content: responseText

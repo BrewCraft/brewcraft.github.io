@@ -61,47 +61,54 @@ export class GeminiService {
   }
 
   async chat(messages: Message[], context?: any) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+
     try {
       const history = messages.slice(0, -1).map(m => ({
-        role: m.role === "system" ? "user" : m.role, // Gemini chat history doesn't support 'system' role
-        parts: [{ text: m.content }],
+        role: m.role === "system" ? "user" : m.role,
+        parts: [{ text: m.content || "" }],
       }));
 
-      const lastMessage = messages[messages.length - 1];
-      
-      const chatSession = this.model.startChat({
-        history: history,
-      });
+      const lastMessage = messages[messages.length - 1] ?? { role: "user", content: "Olá" };
+      const chatSession = this.model.startChat({ history });
 
-      let promptParts: any[] = [{ text: lastMessage.content }];
-      
+      let promptParts: any[] = [{ text: lastMessage.content || "Olá" }];
+
       if (context) {
         promptParts[0].text += `\n\nContexto do BrewCraft: ${JSON.stringify(context)}`;
       }
 
       if (lastMessage.image) {
-        // Handle image input
-        const imageData = lastMessage.image.split(",")[1]; // Remove prefix "data:image/png;base64,"
+        const imageData = lastMessage.image.split(",")[1];
+        const mimeMatch = lastMessage.image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
+        const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+
         promptParts = [
-          { text: lastMessage.content },
-          {
-            inlineData: {
-              data: imageData,
-              mimeType: "image/jpeg" // Defaulting to jpeg, but should ideally be dynamic
-            }
-          }
+          { text: lastMessage.content || "Analise esta imagem:" },
+          { inlineData: { data: imageData, mimeType } },
         ];
-        
-        // Multi-modal calls usually use generateContent instead of chat for the specific message
-        const result = await this.model.generateContent(promptParts);
+
+        const result = await this.model.generateContent(promptParts, { signal: controller.signal });
         return result.response.text();
       }
 
-      const result = await chatSession.sendMessage(promptParts);
+      const result = await chatSession.sendMessage(promptParts, { signal: controller.signal });
       return result.response.text();
     } catch (error: any) {
       console.error("Gemini API Error:", error);
-      throw new Error(error.message || "Falha na comunicação com o Gemini");
+
+      if (error?.name === "AbortError") {
+        throw new Error("A IA demorou demais para responder. Verifique a chave do Gemini e o modelo configurado.");
+      }
+
+      const message = typeof error?.message === "string"
+        ? error.message
+        : "Falha na comunicação com o Gemini";
+
+      throw new Error(message);
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 

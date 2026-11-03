@@ -305,6 +305,10 @@ export function getCloudOAuthUrl(provider: CloudProvider, redirectUri: string = 
   const clientId = getProviderClientId(provider);
   if (!clientId) return null;
 
+  const verifier = randomUrlSafeToken(64);
+  const state = randomUrlSafeToken(32);
+  writePkceState(provider, { verifier, state });
+
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -314,12 +318,12 @@ export function getCloudOAuthUrl(provider: CloudProvider, redirectUri: string = 
       : provider === "google-drive"
         ? "openid email profile https://www.googleapis.com/auth/drive.file"
         : "Files.ReadWrite offline_access User.Read",
-    state: randomUrlSafeToken(32),
+    state,
+    code_challenge: randomUrlSafeToken(43),
+    code_challenge_method: "S256",
   });
 
   if (provider === "dropbox") {
-    params.set("code_challenge_method", "S256");
-    params.set("code_challenge", "");
     return `https://www.dropbox.com/oauth2/authorize?${params.toString()}`;
   }
 
