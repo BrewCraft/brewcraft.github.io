@@ -368,6 +368,20 @@ export default function SettingsPage() {
               : "Ative a sincronização e conecte um provedor para sincronizar os dados."}
           </div>
 
+          {cloudSyncMsg && (
+            <div
+              role="status"
+              className={
+                cloudSyncMsg.ok
+                  ? "mt-3 flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-900 dark:text-emerald-200"
+                  : "mt-3 flex items-center gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-900 dark:text-red-200"
+              }
+            >
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <span>{cloudSyncMsg.text}</span>
+            </div>
+          )}
+
         </CardContent>
       </Card>
 
@@ -401,20 +415,6 @@ export default function SettingsPage() {
           />
         </CardContent>
       </Card>
-
-      {cloudSyncMsg && (
-        <div
-          role="status"
-          className={
-            cloudSyncMsg.ok
-              ? "flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-900 dark:text-emerald-200"
-              : "flex items-center gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-900 dark:text-red-200"
-          }
-        >
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-          <span>{cloudSyncMsg.text}</span>
-        </div>
-      )}
 
       {importMsg && (
         <div

@@ -301,11 +301,12 @@ export function saveCloudSyncConfig(patch: Partial<CloudSyncConfig>) {
   return readCloudSyncConfig(provider);
 }
 
-export function getCloudOAuthUrl(provider: CloudProvider, redirectUri: string = getRedirectUri()) {
+export async function getCloudOAuthUrl(provider: CloudProvider, redirectUri: string = getRedirectUri()) {
   const clientId = getProviderClientId(provider);
   if (!clientId) return null;
 
   const verifier = randomUrlSafeToken(64);
+  const challenge = await sha256Base64Url(verifier);
   const state = randomUrlSafeToken(32);
   writePkceState(provider, { verifier, state });
 
@@ -319,7 +320,7 @@ export function getCloudOAuthUrl(provider: CloudProvider, redirectUri: string = 
         ? "openid email profile https://www.googleapis.com/auth/drive.file"
         : "Files.ReadWrite offline_access User.Read",
     state,
-    code_challenge: randomUrlSafeToken(43),
+    code_challenge: challenge,
     code_challenge_method: "S256",
   });
 
@@ -338,8 +339,8 @@ export function getCloudOAuthUrl(provider: CloudProvider, redirectUri: string = 
   return `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params.toString()}`;
 }
 
-export function openCloudAuth(provider: CloudProvider) {
-  const url = getCloudOAuthUrl(provider);
+export async function openCloudAuth(provider: CloudProvider) {
+  const url = await getCloudOAuthUrl(provider);
   if (!url) {
     return false;
   }
