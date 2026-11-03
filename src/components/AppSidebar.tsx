@@ -15,6 +15,7 @@ import {
   BookOpen,
   Clock3,
   Sparkles,
+  Cloud,
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useSettings } from "@/lib/settings";
