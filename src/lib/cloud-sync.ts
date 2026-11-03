@@ -922,16 +922,13 @@ async function startProviderAuth(provider: CloudProvider) {
   const timeoutMs = 180000;
   const startedAt = Date.now();
   let settled = false;
-  let isExchangingCode = false;
-  let intervalId: number | undefined;
-  let timerId: number | undefined;
 
   return await new Promise<ProviderSession>((resolve, reject) => {
     const cleanup = () => {
-      if (intervalId !== undefined) {
+      if (intervalId) {
         window.clearInterval(intervalId);
       }
-      if (timerId !== undefined) {
+      if (timerId) {
         window.clearTimeout(timerId);
       }
       try {
@@ -956,11 +953,11 @@ async function startProviderAuth(provider: CloudProvider) {
       resolve(session);
     };
 
-    timerId = window.setTimeout(() => {
+    const timerId = window.setTimeout(() => {
       rejectOnce("Tempo limite da autenticação excedido.");
     }, timeoutMs - (Date.now() - startedAt));
 
-    intervalId = window.setInterval(async () => {
+    const intervalId = window.setInterval(async () => {
       try {
         try {
           if (popup.closed === true) {
@@ -1001,15 +998,6 @@ async function startProviderAuth(provider: CloudProvider) {
           return;
         }
 
-        if (isExchangingCode) {
-          return;
-        }
-
-        isExchangingCode = true;
-        if (intervalId !== undefined) {
-          window.clearInterval(intervalId);
-        }
-
         try {
           const session = await exchangeCodeForToken(provider, code, pkceInfo.verifier, redirectUri);
           await resolveOnce(session);
@@ -1041,9 +1029,11 @@ export async function connectProvider(provider: CloudProvider) {
 
 export async function disconnectProvider(provider: CloudProvider) {
   const session = readProviderSession(provider);
+
   if (provider === "google-drive") {
     try {
       const sessionId = session?.sessionId;
+
       if (sessionId) {
         await fetch(`${GOOGLE_DRIVE_WORKER_URL}/oauth/disconnect`, {
           method: "POST",
@@ -1060,17 +1050,10 @@ export async function disconnectProvider(provider: CloudProvider) {
     } catch {
       // ignore revocation errors; a local disconnect is still allowed.
     }
-  } else if (session?.accessToken) {
-    try {
-      if (provider === "google-drive") {
-        await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(session.accessToken)}`, { method: "POST" });
-      }
-    } catch {
-      // ignore revocation errors; a local disconnect is still allowed.
-    }
   }
 
   writeProviderSession(provider, null);
+
   saveCloudSyncConfig({
     provider,
     enabled: false,
