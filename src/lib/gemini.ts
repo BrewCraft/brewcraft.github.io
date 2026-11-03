@@ -53,7 +53,7 @@ export class GeminiService {
   constructor(apiKey: string) {
     this.genAI = new GoogleGenerativeAI(apiKey);
     this.model = this.genAI.getGenerativeModel({
-      model: "gemini-1.5-flash", // Using flash for better speed and lower cost/latency
+      model: "gemini-2.5-flash",
       systemInstruction: SYSTEM_PROMPT,
     });
   }
