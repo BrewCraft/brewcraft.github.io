@@ -27,6 +27,17 @@ export default function AiAssistant() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [retryMessage, setRetryMessage] = useState<{ text: string; image?: string } | null>(null);
+  const [selectedModel, setSelectedModel] = useState(() => {
+    if (typeof window === "undefined") return "gemini-3.6-flash";
+    const savedModel = localStorage.getItem("brewcraft-ai-model");
+    const allowedModels = [
+      "gemini-3.5-flash-lite",
+      "gemini-3.6-flash",
+      "gemini-3.8-flash",
+      "gemini-3.1-pro",
+    ];
+    return allowedModels.includes(savedModel ?? "") ? savedModel! : "gemini-3.6-flash";
+  });
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -41,6 +52,10 @@ export default function AiAssistant() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isLoading]);
+
+  useEffect(() => {
+    localStorage.setItem("brewcraft-ai-model", selectedModel);
+  }, [selectedModel]);
 
   useEffect(() => {
     return () => {
@@ -96,7 +111,7 @@ export default function AiAssistant() {
     setIsLoading(true);
 
     try {
-      const gemini = new GeminiService(apiKey);
+      const gemini = new GeminiService(apiKey, selectedModel);
 
       const context = {
         recipeCount: recipes.length,
@@ -204,7 +219,22 @@ export default function AiAssistant() {
           <Bot className="w-6 h-6 text-primary" />
           <h1 className="text-2xl font-bold">Assistente IA</h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5 text-xs text-muted-foreground">
+            <span>Modelo</span>
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="bg-transparent text-foreground outline-none"
+              aria-label="Selecionar modelo de IA"
+            >
+              <option value="gemini-3.5-flash-lite">3.5 Flash Lite - Rápido</option>
+              <option value="gemini-3.6-flash">3.6 Flash - Padrão</option>
+              <option value="gemini-3.8-flash">3.8 Flash - Recente</option>
+              <option value="gemini-3.1-pro">3.1 Pro - Raciocínio Avançado</option>
+            </select>
+          </label>
+
           <Button variant="outline" size="sm" onClick={clearConversation}>
             <Trash2 className="w-4 h-4 mr-2" />
             Limpar

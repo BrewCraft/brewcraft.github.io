@@ -50,12 +50,12 @@ export class GeminiService {
   private genAI: GoogleGenerativeAI;
   private model: any;
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, modelName: string = "gemini-3.6-flash") {
     this.genAI = new GoogleGenerativeAI(apiKey);
-    const modelName = (import.meta.env.VITE_GEMINI_MODEL ?? "").trim() || "gemini-3.8-flash";
+    const resolvedModelName = (modelName ?? "").trim() || "gemini-3.6-flash";
 
     this.model = this.genAI.getGenerativeModel({
-      model: modelName,
+      model: resolvedModelName,
       systemInstruction: SYSTEM_PROMPT,
     });
   }
