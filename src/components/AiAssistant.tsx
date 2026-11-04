@@ -105,7 +105,8 @@ export default function AiAssistant() {
     const nextAbortController = new AbortController();
     abortControllerRef.current = nextAbortController;
 
-    setMessages((prev) => [...prev, userMessage]);
+    const emptyAssistantMessage: Message = { role: "model", content: "" };
+    setMessages((prev) => [...prev, userMessage, emptyAssistantMessage]);
     setInput("");
     setSelectedImage(null);
     setIsLoading(true);
@@ -118,23 +119,42 @@ export default function AiAssistant() {
         recipes: recipes.map(r => ({ name: r.name, style: r.styleCode })),
       };
 
-      const responseText = await gemini.chat([...messages, userMessage], context, nextAbortController.signal);
+      const streamResult = await gemini.chatStream([...messages, userMessage], context, nextAbortController.signal);
+      let streamedText = "";
 
-      if (!responseText || !responseText.trim()) {
-        const fallbackMessage: Message = {
-          role: "model",
-          content: "A IA respondeu sem conteúdo. Tente novamente com outra pergunta ou ajuste o contexto da sua mensagem.",
-        };
-        setMessages((prev) => [...prev, fallbackMessage]);
-        return;
+      for await (const chunk of streamResult.stream) {
+        const chunkText = await chunk.text();
+        if (!chunkText) continue;
+
+        streamedText += chunkText;
+
+        setMessages((prev) => {
+          const next = [...prev];
+          const lastIndex = next.length - 1;
+          if (next[lastIndex]?.role !== "model") return prev;
+
+          next[lastIndex] = {
+            ...next[lastIndex],
+            content: (next[lastIndex].content ?? "") + chunkText,
+          };
+
+          return next;
+        });
       }
 
-      const assistantMessage: Message = {
-        role: "model",
-        content: responseText,
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
+      if (!streamedText.trim()) {
+        setMessages((prev) => {
+          const next = [...prev];
+          const lastIndex = next.length - 1;
+          if (next[lastIndex]?.role === "model") {
+            next[lastIndex] = {
+              ...next[lastIndex],
+              content: "A IA respondeu sem conteúdo. Tente novamente com outra pergunta ou ajuste o contexto da sua mensagem.",
+            };
+          }
+          return next;
+        });
+      }
     } catch (error: any) {
       if (error?.name === "AbortError" || error?.message?.includes("aborted")) {
         return;

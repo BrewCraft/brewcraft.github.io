@@ -119,6 +119,47 @@ export class GeminiService {
     }
   }
 
+  async chatStream(messages: Message[], context?: any, signal?: AbortSignal) {
+    const controller = new AbortController();
+
+    if (signal) {
+      if (signal.aborted) {
+        controller.abort();
+      } else {
+        signal.addEventListener("abort", () => controller.abort(), { once: true });
+      }
+    }
+
+    const history = messages.slice(0, -1).map(m => ({
+      role: m.role === "system" ? "user" : m.role,
+      parts: [{ text: m.content || "" }],
+    }));
+
+    const lastMessage = messages[messages.length - 1] ?? { role: "user", content: "Olá" };
+    const chatSession = this.model.startChat({ history });
+
+    let promptParts: any[] = [{ text: lastMessage.content || "Olá" }];
+
+    if (context) {
+      promptParts[0].text += `\n\nContexto do BrewCraft: ${JSON.stringify(context)}`;
+    }
+
+    if (lastMessage.image) {
+      const imageData = lastMessage.image.split(",")[1];
+      const mimeMatch = lastMessage.image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
+      const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+
+      promptParts = [
+        { text: lastMessage.content || "Analise esta imagem:" },
+        { inlineData: { data: imageData, mimeType } },
+      ];
+
+      return await this.model.generateContentStream(promptParts, { signal: controller.signal });
+    }
+
+    return await chatSession.sendMessageStream(promptParts, { signal: controller.signal });
+  }
+
   // Extract JSON recipe from text response
   static extractRecipe(text: string): Partial<Recipe> | null {
     try {
