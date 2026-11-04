@@ -27,7 +27,7 @@ import {
 import { useRecipes, uid } from "@/lib/store";
 import { type Recipe, defaultEquipment } from "@/lib/recipe-calc";
 import { useNavigate } from "react-router-dom";
-import logoIa from "../../logo ia.svg";
+import geminiLogo from "../../gemini-svg.svg";
 
 const parseRecipeMarkdown = (content: string) => {
   const trimmed = (content ?? "").trim();
@@ -362,13 +362,10 @@ export default function AiAssistant() {
     <div className="flex flex-col h-[calc(100vh-120px)] max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <img src={logoIa} alt="Assistente IA" className="w-7 h-7 object-contain" />
+          <img src={geminiLogo} alt="Assistente IA" className="w-16 h-16 object-contain" />
           <h1 className="text-2xl font-bold">Assistente IA</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setIsHistoryOpen((prev) => !prev)}>
-            Histórico
-          </Button>
           <label className="flex items-center gap-2 rounded-md border border-slate-600/70 bg-[#111827]/85 px-2.5 py-1.5 text-xs text-slate-200 shadow-sm backdrop-blur-sm">
             <span className="font-medium text-slate-300">Modelo</span>
             <select
@@ -381,6 +378,9 @@ export default function AiAssistant() {
               <option value="gemini-1.5-pro" className="bg-[#0f172a] text-slate-100">1.5 Pro - Raciocínio Avançado</option>
             </select>
           </label>
+          <Button variant="outline" size="sm" onClick={() => setIsHistoryOpen((prev) => !prev)}>
+            Histórico
+          </Button>
 
           <Button variant="outline" size="sm" onClick={clearConversation}>
             <Trash2 className="w-4 h-4 mr-2" />
@@ -482,7 +482,7 @@ export default function AiAssistant() {
           <ScrollArea className="flex-1 p-4" ref={scrollRef}>
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center space-y-4 pt-12">
-                <img src={logoIa} alt="Assistente IA" className="w-12 h-12 object-contain opacity-20" />
+                <img src={geminiLogo} alt="Assistente IA" className="w-20 h-20 object-contain opacity-20" />
                 <div>
                   <p className="text-xl font-medium text-muted-foreground">Como posso ajudar na sua brassagem hoje?</p>
                   <p className="text-sm text-muted-foreground max-w-xs mx-auto">
@@ -499,7 +499,7 @@ export default function AiAssistant() {
                     <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
                       <div className={`flex gap-3 max-w-[85%] ${m.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
                         <div className={`mt-1 p-2 rounded-full h-fit ${m.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
-                          {m.role === "user" ? <User className="w-4 h-4" /> : <img src={logoIa} alt="Assistente IA" className="w-4 h-4 object-contain" />}
+                          {m.role === "user" ? <User className="w-4 h-4" /> : <img src={geminiLogo} alt="Assistente IA" className="w-10 h-10 object-contain" />}
                         </div>
                         <div className="space-y-2">
                           <div className={`p-3 rounded-2xl ${
@@ -558,7 +558,7 @@ export default function AiAssistant() {
                   <div className="flex justify-start">
                     <div className="flex gap-3 max-w-[85%]">
                       <div className="mt-1 p-2 rounded-full bg-muted h-fit">
-                        <img src={logoIa} alt="Assistente IA" className="w-4 h-4 object-contain" />
+                        <img src={geminiLogo} alt="Assistente IA" className="w-10 h-10 object-contain" />
                       </div>
                       <div className="bg-white dark:bg-slate-800 border rounded-2xl rounded-tl-none p-4 shadow-sm">
                         <Loader2 className="w-5 h-5 animate-spin text-primary" />
