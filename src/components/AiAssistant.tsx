@@ -220,18 +220,18 @@ export default function AiAssistant() {
           <h1 className="text-2xl font-bold">Assistente IA</h1>
         </div>
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5 text-xs text-muted-foreground">
-            <span>Modelo</span>
+          <label className="flex items-center gap-2 rounded-md border border-slate-600/70 bg-[#111827]/85 px-2.5 py-1.5 text-xs text-slate-200 shadow-sm backdrop-blur-sm">
+            <span className="font-medium text-slate-300">Modelo</span>
             <select
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
-              className="bg-transparent text-foreground outline-none"
+              className="min-w-[220px] rounded-md border border-slate-600/80 bg-[#0f172a] px-2 py-1.5 text-xs text-slate-100 outline-none ring-0 transition focus:border-primary focus:ring-2 focus:ring-primary/30"
               aria-label="Selecionar modelo de IA"
             >
-              <option value="gemini-3.5-flash-lite">3.5 Flash Lite - Rápido</option>
-              <option value="gemini-3.6-flash">3.6 Flash - Padrão</option>
-              <option value="gemini-3.8-flash">3.8 Flash - Recente</option>
-              <option value="gemini-3.1-pro">3.1 Pro - Raciocínio Avançado</option>
+              <option value="gemini-3.5-flash-lite" className="bg-[#0f172a] text-slate-100">3.5 Flash Lite - Rápido</option>
+              <option value="gemini-3.6-flash" className="bg-[#0f172a] text-slate-100">3.6 Flash - Padrão</option>
+              <option value="gemini-3.8-flash" className="bg-[#0f172a] text-slate-100">3.8 Flash - Recente</option>
+              <option value="gemini-3.1-pro" className="bg-[#0f172a] text-slate-100">3.1 Pro - Raciocínio Avançado</option>
             </select>
           </label>
 
