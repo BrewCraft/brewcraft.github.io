@@ -139,50 +139,31 @@ export default function AiAssistant() {
   const toggleRecording = () => {
     if (typeof window === "undefined") return;
 
+    type SpeechRecognitionInstance = {
+      lang: string;
+      interimResults: boolean;
+      continuous: boolean;
+      onresult?: ((event: {
+        resultIndex: number;
+        results: ArrayLike<{
+          isFinal: boolean;
+          0: { transcript: string };
+        }>;
+      }) => void) | null;
+      onend?: (() => void) | null;
+      onerror?: ((event: { error?: string }) => void) | null;
+      start: () => void;
+      stop: () => void;
+    };
+
     const SpeechRecognition =
       (window as Window & {
-        SpeechRecognition?: new () => {
-          lang: string;
-          interimResults: boolean;
-          continuous: boolean;
-          onresult?: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-          onend?: (() => void) | null;
-          onerror?: ((event: { error?: string }) => void) | null;
-          start: () => void;
-          stop: () => void;
-        };
-        webkitSpeechRecognition?: new () => {
-          lang: string;
-          interimResults: boolean;
-          continuous: boolean;
-          onresult?: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-          onend?: (() => void) | null;
-          onerror?: ((event: { error?: string }) => void) | null;
-          start: () => void;
-          stop: () => void;
-        };
+        SpeechRecognition?: new () => SpeechRecognitionInstance;
+        webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
       }).SpeechRecognition ||
       (window as Window & {
-        SpeechRecognition?: new () => {
-          lang: string;
-          interimResults: boolean;
-          continuous: boolean;
-          onresult?: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-          onend?: (() => void) | null;
-          onerror?: ((event: { error?: string }) => void) | null;
-          start: () => void;
-          stop: () => void;
-        };
-        webkitSpeechRecognition?: new () => {
-          lang: string;
-          interimResults: boolean;
-          continuous: boolean;
-          onresult?: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-          onend?: (() => void) | null;
-          onerror?: ((event: { error?: string }) => void) | null;
-          start: () => void;
-          stop: () => void;
-        };
+        SpeechRecognition?: new () => SpeechRecognitionInstance;
+        webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
       }).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
@@ -203,12 +184,23 @@ export default function AiAssistant() {
 
     const recognition = new SpeechRecognition();
     recognition.lang = "pt-BR";
-    recognition.interimResults = false;
-    recognition.continuous = false;
+    recognition.continuous = true;
+    recognition.interimResults = true;
     recognition.onresult = (event) => {
-      const transcript = event.results?.[0]?.[0]?.transcript?.trim();
-      if (!transcript) return;
-      setInput((prev) => `${prev}${prev ? " " : ""}${transcript}`);
+      let interimTranscript = "";
+      let finalTranscript = "";
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+
+      if (finalTranscript) {
+        setInput((prev) => prev + (prev.length > 0 ? " " : "") + finalTranscript.trim());
+      }
     };
     recognition.onend = () => {
       recognitionRef.current = null;
