@@ -26,6 +26,7 @@ export default function AiAssistant() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [retryMessage, setRetryMessage] = useState<{ text: string; image?: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -47,6 +48,15 @@ export default function AiAssistant() {
     };
   }, []);
 
+  const retryLastRequest = () => {
+    if (!retryMessage) return;
+    setInput(retryMessage.text);
+    setSelectedImage(retryMessage.image ?? null);
+    window.setTimeout(() => {
+      void handleSend();
+    }, 0);
+  };
+
   const handleSend = async (event?: React.FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
 
@@ -64,11 +74,18 @@ export default function AiAssistant() {
       abortControllerRef.current?.abort();
     }
 
+    const currentText = input.trim();
+    const currentImage = selectedImage || undefined;
     const userMessage: Message = {
       role: "user",
-      content: input,
-      image: selectedImage || undefined,
+      content: currentText || input,
+      image: currentImage,
     };
+
+    setRetryMessage({
+      text: currentText || input,
+      image: currentImage,
+    });
 
     const nextAbortController = new AbortController();
     abortControllerRef.current = nextAbortController;
@@ -88,7 +105,12 @@ export default function AiAssistant() {
 
       const responseText = await gemini.chat([...messages, userMessage], context, nextAbortController.signal);
 
-      if (!responseText) {
+      if (!responseText || !responseText.trim()) {
+        const fallbackMessage: Message = {
+          role: "model",
+          content: "A IA respondeu sem conteúdo. Tente novamente com outra pergunta ou ajuste o contexto da sua mensagem.",
+        };
+        setMessages((prev) => [...prev, fallbackMessage]);
         return;
       }
 
@@ -99,7 +121,7 @@ export default function AiAssistant() {
 
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error: any) {
-      if (error?.name === "AbortError") {
+      if (error?.name === "AbortError" || error?.message?.includes("aborted")) {
         return;
       }
 
@@ -249,6 +271,23 @@ export default function AiAssistant() {
                           Importar Receita
                         </Button>
                       )}
+
+                      {m.role === "model" && m.content.includes("A IA respondeu sem conteúdo") && (
+                        <div className="rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/20 p-3 text-sm text-amber-900 dark:text-amber-100">
+                          <p className="font-medium">Resposta vazia da IA</p>
+                          <p className="mt-1">A IA não retornou conteúdo útil. Você pode tentar novamente.</p>
+                          <Button 
+                            variant="secondary" 
+                            size="sm" 
+                            className="mt-3 w-full gap-2"
+                            type="button"
+                            onClick={retryLastRequest}
+                          >
+                            <Send className="w-4 h-4" />
+                            Tentar novamente
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -303,12 +342,6 @@ export default function AiAssistant() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Pergunte sobre sua cerveja..."
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void handleSend();
-                }
-              }}
               disabled={isLoading}
               className="flex-1"
             />

@@ -62,7 +62,6 @@ export class GeminiService {
 
   async chat(messages: Message[], context?: any, signal?: AbortSignal) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000);
 
     if (signal) {
       if (signal.aborted) {
@@ -98,13 +97,15 @@ export class GeminiService {
         ];
 
         const result = await this.model.generateContent(promptParts, { signal: controller.signal });
-        return result.response.text();
+        const text = await result.response.text();
+        return text?.trim() || "";
       }
 
       const result = await chatSession.sendMessage(promptParts, { signal: controller.signal });
-      return result.response.text();
+      const text = await result.response.text();
+      return text?.trim() || "";
     } catch (error: any) {
-      if (error?.name === "AbortError") {
+      if (error?.name === "AbortError" || error?.message?.includes("aborted")) {
         return "";
       }
 
@@ -115,8 +116,6 @@ export class GeminiService {
         : "Falha na comunicação com o Gemini";
 
       throw new Error(message);
-    } finally {
-      clearTimeout(timeoutId);
     }
   }
 
