@@ -21,6 +21,39 @@ export type GoogleDriveFile = {
   webViewLink?: string;
 };
 
+export type ChatMessage = {
+  role: "user" | "model" | "system";
+  content: string;
+  image?: string;
+};
+
+export type ChatSession = {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  updatedAt: string;
+};
+
+export const AI_CHAT_STORAGE_KEY = "brewcraft-ai-chats";
+export const AI_SYNC_ENABLED_STORAGE_KEY = "brewcraft-ai-sync-enabled";
+
+export const getSizeMB = (data: any) => (new Blob([JSON.stringify(data)]).size / (1024 * 1024)).toFixed(3);
+
+export const readStoredAiChats = (): ChatSession[] => {
+  try {
+    const raw = localStorage.getItem(AI_CHAT_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as ChatSession[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+export const writeStoredAiChats = (sessions: ChatSession[]) => {
+  localStorage.setItem(AI_CHAT_STORAGE_KEY, JSON.stringify(sessions));
+};
+
 type ProviderSession = {
   accessToken: string;
   refreshToken?: string;
@@ -1706,6 +1739,157 @@ export async function resolveCloudConflict(provider: CloudProvider, resolution: 
   }
 
   localStorage.removeItem("brewfather-cloud-conflict");
+}
+
+function getAiChatFileName(chatId: string) {
+  return `ai-chat-${chatId}.json`;
+}
+
+function getAiChatUpdatedAt(chat: Partial<ChatSession> | null | undefined) {
+  if (!chat || typeof chat !== "object") return 0;
+  const updatedAt = chat.updatedAt;
+  if (typeof updatedAt !== "string") return 0;
+  const ms = new Date(updatedAt).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+async function readAiChatRemoteFile(config: CloudSyncConfig, chatId: string): Promise<ChatSession | null> {
+  const remoteConfig = { ...config, fileName: getAiChatFileName(chatId) };
+  const remoteText = await readRemoteFile(remoteConfig);
+  if (!remoteText) return null;
+
+  try {
+    const parsed = JSON.parse(remoteText) as Partial<ChatSession>;
+    if (!parsed || typeof parsed !== "object" || typeof parsed.id !== "string" || !Array.isArray(parsed.messages)) {
+      return null;
+    }
+
+    return {
+      id: parsed.id,
+      title: typeof parsed.title === "string" ? parsed.title : "Nova conversa",
+      messages: parsed.messages as ChatMessage[],
+      updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function writeAiChatRemoteFile(config: CloudSyncConfig, chat: ChatSession) {
+  const remoteConfig = { ...config, fileName: getAiChatFileName(chat.id) };
+  await writeRemoteFile(remoteConfig, JSON.stringify(chat, null, 2));
+}
+
+async function listAiChatFiles(config: CloudSyncConfig): Promise<Array<{ id: string; name: string; modifiedTime?: string }>> {
+  const token = await ensureAccessToken(config.provider);
+
+  if (config.provider === "dropbox") {
+    const folder = normalizeRemotePathSegment(config.folder);
+    const response = await fetch("https://api.dropboxapi.com/2/files/list_folder", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ path: folder ? `/${folder}` : "/", recursive: true }),
+    });
+
+    if (!response.ok) return [];
+
+    const data = await response.json().catch(() => ({})) as { entries?: Array<{ path_lower?: string; name?: string; server_modified?: string }> };
+    return (data.entries ?? [])
+      .filter((entry) => typeof entry.path_lower === "string" && /\/ai-chat-.*\.json$/i.test(entry.path_lower))
+      .map((entry) => ({
+        id: (entry.path_lower ?? "").replace(/^.*\/ai-chat-/, "").replace(/\.json$/i, ""),
+        name: entry.name ?? "ai-chat.json",
+        modifiedTime: entry.server_modified,
+      }));
+  }
+
+  if (config.provider === "google-drive") {
+    const folderId = await ensureGoogleDriveFolder(config.folder, token);
+    const query = folderId
+      ? `'${folderId}' in parents and name contains 'ai-chat-' and mimeType = 'application/json' and trashed = false`
+      : "name contains 'ai-chat-' and mimeType = 'application/json' and trashed = false";
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,modifiedTime)&pageSize=100`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) return [];
+    const data = await response.json().catch(() => ({})) as { files?: Array<{ name?: string; modifiedTime?: string }> };
+    return (data.files ?? [])
+      .filter((file) => /^ai-chat-.*\.json$/i.test(file.name ?? ""))
+      .map((file) => ({
+        id: (file.name ?? "").replace(/^ai-chat-/, "").replace(/\.json$/i, ""),
+        name: file.name ?? "ai-chat.json",
+        modifiedTime: file.modifiedTime,
+      }));
+  }
+
+  const response = await fetch("https://graph.microsoft.com/v1.0/me/drive/root/children", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) return [];
+  const data = await response.json().catch(() => ({})) as { value?: Array<{ name?: string; lastModifiedDateTime?: string }> };
+  return (data.value ?? [])
+    .filter((file) => /^ai-chat-.*\.json$/i.test(file.name ?? ""))
+    .map((file) => ({
+      id: (file.name ?? "").replace(/^ai-chat-/, "").replace(/\.json$/i, ""),
+      name: file.name ?? "ai-chat.json",
+      modifiedTime: file.lastModifiedDateTime,
+    }));
+}
+
+export async function syncAiChats(provider: CloudProvider = readCloudSyncConfig().provider) {
+  const syncEnabled = localStorage.getItem(AI_SYNC_ENABLED_STORAGE_KEY) === "true";
+  if (!syncEnabled) {
+    return { uploaded: 0, downloaded: 0, total: 0 };
+  }
+
+  const config = readCloudSyncConfig(provider);
+  if (!config.enabled) {
+    return { uploaded: 0, downloaded: 0, total: 0 };
+  }
+
+  const localChats = readStoredAiChats();
+  const localMap = new Map(localChats.map((chat) => [chat.id, chat]));
+  const remoteFiles = await listAiChatFiles(config);
+  const remoteMap = new Map<string, ChatSession>();
+
+  for (const file of remoteFiles) {
+    const chat = await readAiChatRemoteFile(config, file.id);
+    if (chat) remoteMap.set(chat.id, chat);
+  }
+
+  let uploaded = 0;
+  for (const chat of localChats) {
+    const remote = remoteMap.get(chat.id);
+    if (!remote || getAiChatUpdatedAt(remote) < getAiChatUpdatedAt(chat)) {
+      await writeAiChatRemoteFile(config, chat);
+      uploaded += 1;
+    }
+  }
+
+  let downloaded = 0;
+  const merged = new Map<string, ChatSession>();
+  for (const chat of localChats) merged.set(chat.id, chat);
+  for (const [id, remote] of remoteMap.entries()) {
+    const local = merged.get(id);
+    if (!local || getAiChatUpdatedAt(remote) > getAiChatUpdatedAt(local)) {
+      merged.set(id, remote);
+      downloaded += 1;
+    }
+  }
+
+  const nextSessions = [...merged.values()].sort((a, b) => getAiChatUpdatedAt(b) - getAiChatUpdatedAt(a));
+  writeStoredAiChats(nextSessions);
+
+  return {
+    uploaded,
+    downloaded,
+    total: nextSessions.length,
+  };
 }
 
 export { readAllLocalData };
