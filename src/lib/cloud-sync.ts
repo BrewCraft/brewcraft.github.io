@@ -1051,7 +1051,8 @@ export async function disconnectProvider(provider: CloudProvider) {
 
   if (provider === "google-drive") {
     try {
-      const sessionId = session?.sessionId;
+ 
+     const sessionId = session?.sessionId;
 
       if (sessionId) {
         await fetch(`${GOOGLE_DRIVE_WORKER_URL}/oauth/disconnect`, {
@@ -1681,6 +1682,30 @@ export function getProviderConnectionStatus(provider: CloudProvider) {
 
 export function getConnectedProviderAccountName(provider: CloudProvider) {
   return getProviderAccountName(provider) ?? (readCloudSyncConfig(provider).enabled ? "Conta conectada" : null);
+}
+
+export async function resolveCloudConflict(provider: CloudProvider, resolution: "local-wins" | "remote-wins") {
+  const conflictRaw = localStorage.getItem("brewfather-cloud-conflict");
+  if (!conflictRaw) return;
+
+  const conflict = JSON.parse(conflictRaw);
+  const config = readCloudSyncConfig(provider);
+  const baselineKey = `brewcraft-cloud-baseline-${provider}`;
+
+  if (resolution === "local-wins") {
+    const localPayloadJson = JSON.stringify(conflict.localPayload, null, 2);
+    await writeRemoteFile(config, localPayloadJson);
+    const signature = fnv1aHash(stableStringify({ data: conflict.localPayload.data, settings: conflict.localPayload.settings }));
+    localStorage.setItem(baselineKey, signature);
+    saveCloudSyncConfig({ provider, lastSyncAt: new Date().toISOString(), lastSyncStatus: "Dados locais forçados para a nuvem" });
+  } else {
+    restoreBackup(conflict.remotePayload);
+    const signature = fnv1aHash(stableStringify({ data: conflict.remotePayload.data, settings: conflict.remotePayload.settings ?? {} }));
+    localStorage.setItem(baselineKey, signature);
+    saveCloudSyncConfig({ provider, lastSyncAt: new Date().toISOString(), lastSyncStatus: "Dados da nuvem restaurados localmente" });
+  }
+
+  localStorage.removeItem("brewfather-cloud-conflict");
 }
 
 export { readAllLocalData };

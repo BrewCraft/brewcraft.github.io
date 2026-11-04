@@ -16,6 +16,7 @@ import {
   getConnectedProviderAccountName,
   getProviderConnectionStatus,
   readCloudSyncConfig,
+  resolveCloudConflict,
   saveCloudSyncConfig,
   supportedCloudProviders,
   syncCloudData,
@@ -72,6 +73,16 @@ export default function SettingsPage() {
   const [cloudConfig, setCloudConfig] = useState<ReturnType<typeof readCloudSyncConfig>>(() => readCloudSyncConfig("dropbox"));
   const [draftCloudConfig, setDraftCloudConfig] = useState<ReturnType<typeof readCloudSyncConfig>>(() => readCloudSyncConfig("dropbox"));
   const [cloudSyncMsg, setCloudSyncMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [syncConflict, setSyncConflict] = useState<any>(null);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("brewfather-cloud-conflict");
+      setSyncConflict(raw ? JSON.parse(raw) : null);
+    } catch {
+      setSyncConflict(null);
+    }
+  }, []);
 
   useEffect(() => {
     if (!location.hash) return;
@@ -141,6 +152,12 @@ export default function SettingsPage() {
 
     try {
       const result = await syncCloudData(provider);
+      try {
+        const raw = localStorage.getItem("brewfather-cloud-conflict");
+        setSyncConflict(raw ? JSON.parse(raw) : null);
+      } catch {
+        setSyncConflict(null);
+      }
       setCloudSyncMsg({ ok: true, text: `Sincronização com ${cloudProviderLabels[provider]}: ${result.message}` });
     } catch (error) {
       setCloudSyncMsg({ ok: false, text: error instanceof Error ? error.message : `Não foi possível sincronizar com ${cloudProviderLabels[provider]}.` });
@@ -293,6 +310,34 @@ export default function SettingsPage() {
                       Sincronizar
                     </Button>
                   </div>
+
+                  {syncConflict && syncConflict.provider === provider && (
+                    <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-200">
+                      <p className="font-medium">Conflito detectado: Já existe um backup na nuvem. Qual versão você deseja manter?</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            await resolveCloudConflict(provider, "local-wins");
+                            setSyncConflict(null);
+                          }}
+                        >
+                          Manter local
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="default"
+                          onClick={async () => {
+                            await resolveCloudConflict(provider, "remote-wins");
+                            setSyncConflict(null);
+                          }}
+                        >
+                          Manter nuvem
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
