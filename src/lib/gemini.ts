@@ -50,9 +50,9 @@ export class GeminiService {
   private genAI: GoogleGenerativeAI;
   private model: any;
 
-  constructor(apiKey: string, modelName: string = "gemini-3.6-flash") {
+  constructor(apiKey: string, modelName: string = "gemini-1.5-flash") {
     this.genAI = new GoogleGenerativeAI(apiKey);
-    const resolvedModelName = (modelName ?? "").trim() || "gemini-3.6-flash";
+    const resolvedModelName = (modelName ?? "").trim() || "gemini-1.5-flash";
 
     this.model = this.genAI.getGenerativeModel({
       model: resolvedModelName,
@@ -163,10 +163,11 @@ export class GeminiService {
   // Extract JSON recipe from text response
   static extractRecipe(text: string): Partial<Recipe> | null {
     try {
-      const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/{[\s\S]*}/);
+      const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      const jsonMatch = fenced || text.match(/(\{[\s\S]*\})/);
       if (jsonMatch) {
-        const jsonStr = jsonMatch[1] || jsonMatch[0];
-        return JSON.parse(jsonStr);
+        const jsonStr = fenced ? fenced[1] : jsonMatch[1];
+        return JSON.parse(jsonStr.trim());
       }
     } catch (e) {
       console.error("Failed to extract recipe JSON", e);

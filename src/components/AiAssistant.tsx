@@ -27,7 +27,40 @@ import {
 import { useRecipes, uid } from "@/lib/store";
 import { type Recipe, defaultEquipment } from "@/lib/recipe-calc";
 import { useNavigate } from "react-router-dom";
-import { SmartHopIcon } from "@/components/icons/SmartHopIcon";
+import logoIa from "../../logo ia.svg";
+
+const parseRecipeMarkdown = (content: string) => {
+  const trimmed = (content ?? "").trim();
+  if (!trimmed) return null;
+
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenceMatch) {
+    const jsonText = fenceMatch[1].trim();
+    const before = trimmed.slice(0, fenceMatch.index ?? 0).trim();
+    const after = trimmed.slice((fenceMatch.index ?? 0) + fenceMatch[0].length).trim();
+
+    try {
+      return {
+        recipe: JSON.parse(jsonText),
+        explanation: [before, after].filter(Boolean).join("\n\n") || "Receita pronta para importação.",
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  const jsonMatch = trimmed.match(/(\{[\s\S]*\})/);
+  if (!jsonMatch) return null;
+
+  try {
+    return {
+      recipe: JSON.parse(jsonMatch[1]),
+      explanation: trimmed.replace(jsonMatch[1], "").trim() || "Receita pronta para importação.",
+    };
+  } catch {
+    return null;
+  }
+};
 
 export default function AiAssistant() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -43,15 +76,13 @@ export default function AiAssistant() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [retryMessage, setRetryMessage] = useState<{ text: string; image?: string } | null>(null);
   const [selectedModel, setSelectedModel] = useState(() => {
-    if (typeof window === "undefined") return "gemini-3.6-flash";
+    if (typeof window === "undefined") return "gemini-1.5-flash";
     const savedModel = localStorage.getItem("brewcraft-ai-model");
     const allowedModels = [
-      "gemini-3.5-flash-lite",
-      "gemini-3.6-flash",
-      "gemini-3.8-flash",
-      "gemini-3.1-pro",
+      "gemini-1.5-flash",
+      "gemini-1.5-pro",
     ];
-    return allowedModels.includes(savedModel ?? "") ? savedModel! : "gemini-3.6-flash";
+    return allowedModels.includes(savedModel ?? "") ? savedModel! : "gemini-1.5-flash";
   });
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -289,7 +320,7 @@ export default function AiAssistant() {
   };
 
   const handleImportRecipe = (content: string) => {
-    const recipeData = GeminiService.extractRecipe(content);
+    const recipeData = parseRecipeMarkdown(content)?.recipe ?? GeminiService.extractRecipe(content);
     if (!recipeData) {
       toast({
         title: "Erro",
@@ -299,7 +330,6 @@ export default function AiAssistant() {
       return;
     }
 
-    // Prepare complete recipe object
     const newRecipe: Recipe = {
       id: uid(),
       name: recipeData.name || "Nova Receita IA",
@@ -318,7 +348,6 @@ export default function AiAssistant() {
       updatedAt: new Date().toISOString(),
     };
 
-    // Ask for confirmation
     if (confirm(`Deseja importar a receita "${newRecipe.name}"?`)) {
       setRecipes([newRecipe, ...recipes]);
       toast({
@@ -333,7 +362,7 @@ export default function AiAssistant() {
     <div className="flex flex-col h-[calc(100vh-120px)] max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <SmartHopIcon className="w-6 h-6 text-primary" />
+          <img src={logoIa} alt="Assistente IA" className="w-7 h-7 object-contain" />
           <h1 className="text-2xl font-bold">Assistente IA</h1>
         </div>
         <div className="flex items-center gap-2">
@@ -348,10 +377,8 @@ export default function AiAssistant() {
               className="min-w-[220px] rounded-md border border-slate-600/80 bg-[#0f172a] px-2 py-1.5 text-xs text-slate-100 outline-none ring-0 transition focus:border-primary focus:ring-2 focus:ring-primary/30"
               aria-label="Selecionar modelo de IA"
             >
-              <option value="gemini-3.5-flash-lite" className="bg-[#0f172a] text-slate-100">3.5 Flash Lite - Rápido</option>
-              <option value="gemini-3.6-flash" className="bg-[#0f172a] text-slate-100">3.6 Flash - Padrão</option>
-              <option value="gemini-3.8-flash" className="bg-[#0f172a] text-slate-100">3.8 Flash - Recente</option>
-              <option value="gemini-3.1-pro" className="bg-[#0f172a] text-slate-100">3.1 Pro - Raciocínio Avançado</option>
+              <option value="gemini-1.5-flash" className="bg-[#0f172a] text-slate-100">1.5 Flash - Padrão / Rápido</option>
+              <option value="gemini-1.5-pro" className="bg-[#0f172a] text-slate-100">1.5 Pro - Raciocínio Avançado</option>
             </select>
           </label>
 
@@ -455,7 +482,7 @@ export default function AiAssistant() {
           <ScrollArea className="flex-1 p-4" ref={scrollRef}>
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center space-y-4 pt-12">
-                <SmartHopIcon className="w-12 h-12 text-muted-foreground opacity-20" />
+                <img src={logoIa} alt="Assistente IA" className="w-12 h-12 object-contain opacity-20" />
                 <div>
                   <p className="text-xl font-medium text-muted-foreground">Como posso ajudar na sua brassagem hoje?</p>
                   <p className="text-sm text-muted-foreground max-w-xs mx-auto">
@@ -465,61 +492,73 @@ export default function AiAssistant() {
               </div>
             ) : (
               <div className="space-y-4">
-                {messages.map((m, i) => (
-                  <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className={`flex gap-3 max-w-[85%] ${m.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
-                      <div className={`mt-1 p-2 rounded-full h-fit ${m.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
-                        {m.role === "user" ? <User className="w-4 h-4" /> : <SmartHopIcon className="w-4 h-4" />}
-                      </div>
-                      <div className="space-y-2">
-                        <div className={`p-3 rounded-2xl ${
-                          m.role === "user" 
-                          ? "bg-primary text-primary-foreground rounded-tr-none" 
-                          : "bg-white dark:bg-slate-800 border rounded-tl-none shadow-sm"
-                        }`}>
-                          {m.image && (
-                            <img src={m.image} alt="Upload" className="max-w-xs rounded-lg mb-2 border" />
-                          )}
-                          <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.content}</p>
-                        </div>
-                        
-                        {m.role === "model" && GeminiService.extractRecipe(m.content) && (
-                          <Button 
-                            variant="secondary" 
-                            size="sm" 
-                            className="w-full gap-2"
-                            onClick={() => handleImportRecipe(m.content)}
-                          >
-                            <Download className="w-4 h-4" />
-                            Importar Receita
-                          </Button>
-                        )}
+                {messages.map((m, i) => {
+                  const recipePreview = m.role === "model" ? parseRecipeMarkdown(m.content) : null;
 
-                        {m.role === "model" && m.content.includes("A IA respondeu sem conteúdo") && (
-                          <div className="rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/20 p-3 text-sm text-amber-900 dark:text-amber-100">
-                            <p className="font-medium">Resposta vazia da IA</p>
-                            <p className="mt-1">A IA não retornou conteúdo útil. Você pode tentar novamente.</p>
-                            <Button 
-                              variant="secondary" 
-                              size="sm" 
-                              className="mt-3 w-full gap-2"
-                              type="button"
-                              onClick={retryLastRequest}
-                            >
-                              <Send className="w-4 h-4" />
-                              Tentar novamente
-                            </Button>
+                  return (
+                    <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                      <div className={`flex gap-3 max-w-[85%] ${m.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
+                        <div className={`mt-1 p-2 rounded-full h-fit ${m.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                          {m.role === "user" ? <User className="w-4 h-4" /> : <img src={logoIa} alt="Assistente IA" className="w-4 h-4 object-contain" />}
+                        </div>
+                        <div className="space-y-2">
+                          <div className={`p-3 rounded-2xl ${
+                            m.role === "user" 
+                            ? "bg-primary text-primary-foreground rounded-tr-none" 
+                            : "bg-white dark:bg-slate-800 border rounded-tl-none shadow-sm"
+                          }`}>
+                            {m.image && (
+                              <img src={m.image} alt="Upload" className="max-w-xs rounded-lg mb-2 border" />
+                            )}
+
+                            {recipePreview ? (
+                              <div className="space-y-3">
+                                {recipePreview.explanation && (
+                                  <p className="text-sm whitespace-pre-wrap leading-relaxed text-slate-700 dark:text-slate-200">
+                                    {recipePreview.explanation}
+                                  </p>
+                                )}
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  className="w-full gap-2 justify-center"
+                                  onClick={() => handleImportRecipe(m.content)}
+                                >
+                                  <Download className="w-4 h-4" />
+                                  Importar Receita: {recipePreview.recipe?.name || "Sem nome"}
+                                </Button>
+                              </div>
+                            ) : (
+                              <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.content}</p>
+                            )}
                           </div>
-                        )}
+
+                          {m.role === "model" && m.content.includes("A IA respondeu sem conteúdo") && (
+                            <div className="rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/20 p-3 text-sm text-amber-900 dark:text-amber-100">
+                              <p className="font-medium">Resposta vazia da IA</p>
+                              <p className="mt-1">A IA não retornou conteúdo útil. Você pode tentar novamente.</p>
+                              <Button 
+                                variant="secondary" 
+                                size="sm" 
+                                className="mt-3 w-full gap-2"
+                                type="button"
+                                onClick={retryLastRequest}
+                              >
+                                <Send className="w-4 h-4" />
+                                Tentar novamente
+                              </Button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {isLoading && (
                   <div className="flex justify-start">
                     <div className="flex gap-3 max-w-[85%]">
                       <div className="mt-1 p-2 rounded-full bg-muted h-fit">
-                        <SmartHopIcon className="w-4 h-4" />
+                        <img src={logoIa} alt="Assistente IA" className="w-4 h-4 object-contain" />
                       </div>
                       <div className="bg-white dark:bg-slate-800 border rounded-2xl rounded-tl-none p-4 shadow-sm">
                         <Loader2 className="w-5 h-5 animate-spin text-primary" />
