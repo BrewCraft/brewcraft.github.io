@@ -7,7 +7,8 @@ import {
   Trash2, 
   Image as ImageIcon, 
   Download,
-  AlertCircle
+  AlertCircle,
+  Mic
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,6 +74,7 @@ export default function AiAssistant() {
   });
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [retryMessage, setRetryMessage] = useState<{ text: string; image?: string } | null>(null);
   const [selectedModel, setSelectedModel] = useState(() => {
@@ -87,6 +89,7 @@ export default function AiAssistant() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const recognitionRef = useRef<{ stop: () => void } | null>(null);
   const { toast } = useToast();
   const [recipes, setRecipes] = useRecipes();
   const navigate = useNavigate();
@@ -129,8 +132,97 @@ export default function AiAssistant() {
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
+      recognitionRef.current?.stop();
     };
   }, []);
+
+  const toggleRecording = () => {
+    if (typeof window === "undefined") return;
+
+    const SpeechRecognition =
+      (window as Window & {
+        SpeechRecognition?: new () => {
+          lang: string;
+          interimResults: boolean;
+          continuous: boolean;
+          onresult?: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+          onend?: (() => void) | null;
+          onerror?: ((event: { error?: string }) => void) | null;
+          start: () => void;
+          stop: () => void;
+        };
+        webkitSpeechRecognition?: new () => {
+          lang: string;
+          interimResults: boolean;
+          continuous: boolean;
+          onresult?: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+          onend?: (() => void) | null;
+          onerror?: ((event: { error?: string }) => void) | null;
+          start: () => void;
+          stop: () => void;
+        };
+      }).SpeechRecognition ||
+      (window as Window & {
+        SpeechRecognition?: new () => {
+          lang: string;
+          interimResults: boolean;
+          continuous: boolean;
+          onresult?: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+          onend?: (() => void) | null;
+          onerror?: ((event: { error?: string }) => void) | null;
+          start: () => void;
+          stop: () => void;
+        };
+        webkitSpeechRecognition?: new () => {
+          lang: string;
+          interimResults: boolean;
+          continuous: boolean;
+          onresult?: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+          onend?: (() => void) | null;
+          onerror?: ((event: { error?: string }) => void) | null;
+          start: () => void;
+          stop: () => void;
+        };
+      }).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      toast({
+        title: "Microfone não suportado",
+        description: "Seu navegador não oferece suporte para reconhecimento de voz.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (isRecording && recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+      setIsRecording(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "pt-BR";
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.onresult = (event) => {
+      const transcript = event.results?.[0]?.[0]?.transcript?.trim();
+      if (!transcript) return;
+      setInput((prev) => `${prev}${prev ? " " : ""}${transcript}`);
+    };
+    recognition.onend = () => {
+      recognitionRef.current = null;
+      setIsRecording(false);
+    };
+    recognition.onerror = () => {
+      recognitionRef.current = null;
+      setIsRecording(false);
+    };
+
+    recognitionRef.current = recognition;
+    setIsRecording(true);
+    recognition.start();
+  };
 
   const persistChatHistory = (nextMessages: Message[], chatIdOverride?: string) => {
     const sessionId = chatIdOverride ?? activeChatId ?? uid();
@@ -168,6 +260,12 @@ export default function AiAssistant() {
 
   const handleSend = async (event?: React.FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
+
+    if (isRecording) {
+      recognitionRef.current?.stop();
+      recognitionRef.current = null;
+      setIsRecording(false);
+    }
 
     if (!input.trim() && !selectedImage) return;
     if (!apiKey) {
@@ -360,12 +458,10 @@ export default function AiAssistant() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
+      <div className="mb-4 flex w-full flex-col flex-wrap items-start justify-between gap-4 md:flex-row md:items-center">
+        <div className="flex w-full flex-row flex-wrap items-center gap-2 md:w-auto">
           <img src={geminiLogo} alt="Assistente IA" className="w-16 h-16 object-contain" />
           <h1 className="text-2xl font-bold">Assistente IA</h1>
-        </div>
-        <div className="flex items-center gap-2">
           <label className="flex items-center gap-2 rounded-md border border-slate-600/70 bg-[#111827]/85 px-2.5 py-1.5 text-xs text-slate-200 shadow-sm backdrop-blur-sm">
             <span className="font-medium text-slate-300">Modelo</span>
             <select
@@ -378,6 +474,8 @@ export default function AiAssistant() {
               <option value="gemini-1.5-pro" className="bg-[#0f172a] text-slate-100">1.5 Pro - Raciocínio Avançado</option>
             </select>
           </label>
+        </div>
+        <div className="flex w-full flex-row flex-wrap gap-2 md:w-auto">
           <Button variant="outline" size="sm" onClick={() => setIsHistoryOpen((prev) => !prev)}>
             Histórico
           </Button>
@@ -599,6 +697,16 @@ export default function AiAssistant() {
                 disabled={isLoading}
               >
                 <ImageIcon className="w-5 h-5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                type="button"
+                onClick={toggleRecording}
+                disabled={isLoading}
+                aria-label={isRecording ? "Parar gravação de voz" : "Gravar por voz"}
+              >
+                <Mic className={`w-5 h-5 ${isRecording ? "text-red-500 animate-pulse" : ""}`} />
               </Button>
               <Input
                 value={input}
