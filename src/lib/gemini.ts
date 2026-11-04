@@ -60,9 +60,17 @@ export class GeminiService {
     });
   }
 
-  async chat(messages: Message[], context?: any) {
+  async chat(messages: Message[], context?: any, signal?: AbortSignal) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+    if (signal) {
+      if (signal.aborted) {
+        controller.abort();
+      } else {
+        signal.addEventListener("abort", () => controller.abort(), { once: true });
+      }
+    }
 
     try {
       const history = messages.slice(0, -1).map(m => ({
@@ -96,11 +104,11 @@ export class GeminiService {
       const result = await chatSession.sendMessage(promptParts, { signal: controller.signal });
       return result.response.text();
     } catch (error: any) {
-      console.error("Gemini API Error:", error);
-
       if (error?.name === "AbortError") {
-        throw new Error("A IA demorou demais para responder. Verifique a chave do Gemini e o modelo configurado.");
+        return "";
       }
+
+      console.error("Gemini API Error:", error);
 
       const message = typeof error?.message === "string"
         ? error.message

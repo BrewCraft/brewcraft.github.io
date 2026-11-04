@@ -28,6 +28,7 @@ export default function AiAssistant() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const { toast } = useToast();
   const [recipes, setRecipes] = useRecipes();
   const navigate = useNavigate();
@@ -40,7 +41,15 @@ export default function AiAssistant() {
     }
   }, [messages, isLoading]);
 
-  const handleSend = async () => {
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
+  const handleSend = async (event?: React.FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
+
     if (!input.trim() && !selectedImage) return;
     if (!apiKey) {
       toast({
@@ -51,11 +60,18 @@ export default function AiAssistant() {
       return;
     }
 
-    const userMessage: Message = { 
-      role: "user", 
+    if (isLoading) {
+      abortControllerRef.current?.abort();
+    }
+
+    const userMessage: Message = {
+      role: "user",
       content: input,
-      image: selectedImage || undefined
+      image: selectedImage || undefined,
     };
+
+    const nextAbortController = new AbortController();
+    abortControllerRef.current = nextAbortController;
 
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
@@ -67,24 +83,35 @@ export default function AiAssistant() {
 
       const context = {
         recipeCount: recipes.length,
-        recipes: recipes.map(r => ({ name: r.name, style: r.styleCode }))
+        recipes: recipes.map(r => ({ name: r.name, style: r.styleCode })),
       };
 
-      const responseText = await gemini.chat([...messages, userMessage], context);
+      const responseText = await gemini.chat([...messages, userMessage], context, nextAbortController.signal);
+
+      if (!responseText) {
+        return;
+      }
 
       const assistantMessage: Message = {
         role: "model",
-        content: responseText
+        content: responseText,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error: any) {
+      if (error?.name === "AbortError") {
+        return;
+      }
+
       toast({
         title: "Erro",
         description: error.message || "Não foi possível obter resposta da IA",
         variant: "destructive",
       });
     } finally {
+      if (abortControllerRef.current === nextAbortController) {
+        abortControllerRef.current = null;
+      }
       setIsLoading(false);
     }
   };
@@ -101,6 +128,8 @@ export default function AiAssistant() {
   };
 
   const clearConversation = () => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     setMessages([]);
     setSelectedImage(null);
   };
@@ -240,11 +269,12 @@ export default function AiAssistant() {
           )}
         </ScrollArea>
 
-        <div className="p-4 bg-white dark:bg-slate-800 border-t">
+        <form onSubmit={handleSend} className="p-4 bg-white dark:bg-slate-800 border-t">
           {selectedImage && (
             <div className="relative inline-block mb-2">
               <img src={selectedImage} alt="Preview" className="h-20 w-20 object-cover rounded-md border" />
               <button 
+                type="button"
                 onClick={() => setSelectedImage(null)}
                 className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 shadow-lg"
               >
@@ -273,15 +303,20 @@ export default function AiAssistant() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Pergunte sobre sua cerveja..."
-              onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void handleSend();
+                }
+              }}
               disabled={isLoading}
               className="flex-1"
             />
-            <Button onClick={handleSend} disabled={isLoading || (!input.trim() && !selectedImage)}>
+            <Button type="submit" disabled={isLoading || (!input.trim() && !selectedImage)}>
               <Send className="w-5 h-5" />
             </Button>
           </div>
-        </div>
+        </form>
       </Card>
     </div>
   );
