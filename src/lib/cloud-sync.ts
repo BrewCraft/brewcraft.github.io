@@ -195,9 +195,9 @@ function getRedirectUri() {
     return "http://localhost:8080";
   }
 
-  const pathname = window.location.pathname || "/";
-  const normalizedPath = pathname.endsWith("/") ? pathname : `${pathname}/`;
-  return `${origin}${normalizedPath}`;
+  // Remove barras no final para garantir que a URI seja idêntica à cadastrada no Dropbox
+  const pathname = window.location.pathname.replace(/\/+$/, "");
+  return `${origin}${pathname || "/"}`;
 }
 
 function getProviderEnvName(provider: CloudProvider) {
@@ -530,7 +530,13 @@ async function exchangeCodeForToken(
   };
 
   if (!response.ok || !data.access_token) {
-    throw new Error(data.error_description || data.error || "Não foi possível trocar o código de autorização por um token válido.");
+    const errorMsg = data.error_description || data.error || "Não foi possível trocar o código de autorização por um token válido.";
+    console.error(`Erro no token exchange do ${provider}:`, {
+      status: response.status,
+      statusText: response.statusText,
+      data,
+    });
+    throw new Error(`${errorMsg} (Erro ${response.status})`);
   }
 
   const nextExpiresAt = Date.now() + (Number(data.expires_in ?? 3600) * 1000);
@@ -922,6 +928,7 @@ async function startProviderAuth(provider: CloudProvider) {
   const timeoutMs = 180000;
   const startedAt = Date.now();
   let settled = false;
+  let isProcessing = false;
 
   return await new Promise<ProviderSession>((resolve, reject) => {
     const cleanup = () => {
@@ -958,6 +965,7 @@ async function startProviderAuth(provider: CloudProvider) {
     }, timeoutMs - (Date.now() - startedAt));
 
     const intervalId = window.setInterval(async () => {
+      if (isProcessing || settled) return;
       try {
         try {
           if (popup.closed === true) {
@@ -993,21 +1001,32 @@ async function startProviderAuth(provider: CloudProvider) {
           return;
         }
 
-        const pkceInfo = readPkceState(provider);
-        if (!code || !returnedState || !pkceInfo || returnedState !== pkceInfo.state) {
+        // Importante: Não ler o PKCE aqui dentro do loop repetidamente se for usar uma flag de isProcessing
+        if (!code || !returnedState || returnedState !== state) {
           return;
         }
 
+        isProcessing = true;
+
+        // Tenta fechar o popup ou mudar sua URL imediatamente para evitar re-processamento
         try {
-          const session = await exchangeCodeForToken(provider, code, pkceInfo.verifier, redirectUri);
+          popup.location.href = "about:blank";
+          popup.close();
+        } catch (e) {
+          // Ignora se falhar (cross-origin)
+        }
+
+        try {
+          const session = await exchangeCodeForToken(provider, code, verifier, redirectUri);
           await resolveOnce(session);
         } catch (error) {
+          isProcessing = false;
           rejectOnce(error instanceof Error ? error.message : "Não foi possível completar a autenticação.");
         }
       } catch {
         // cross-origin / callback not ready yet; keep waiting until the provider redirects back.
       }
-    }, 350);
+    }, 500);
   });
 }
 
