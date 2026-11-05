@@ -87,6 +87,7 @@ export default function AiAssistant() {
     return allowedModels.includes(savedModel ?? "") ? savedModel! : "gemini-3.6-flash";
   });
   const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
@@ -97,10 +98,15 @@ export default function AiAssistant() {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
   const totalHistorySizeMB = history.reduce((total, chat) => total + Number(getSizeMB(chat)), 0);
 
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
+    scrollToBottom();
   }, [messages, isLoading]);
 
   useEffect(() => {
@@ -656,6 +662,7 @@ export default function AiAssistant() {
                     </div>
                   </div>
                 )}
+                <div ref={messagesEndRef} />
               </div>
             )}
           </ScrollArea>
