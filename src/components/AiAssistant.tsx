@@ -81,13 +81,10 @@ export default function AiAssistant() {
     if (typeof window === "undefined") return "gemini-3.6-flash";
     const savedModel = localStorage.getItem("brewcraft-ai-model");
     const allowedModels = [
-      "gemini-4-argon",
-      "gemini-2.5-pro",
       "gemini-3.6-flash",
-      "gemini-1.5-flash",
-      "gemini-1.5-pro",
+      "gemini-3.5-flash-lite",
     ];
-    return allowedModels.includes(savedModel ?? "") ? savedModel! : "gemini-4-argon";
+    return allowedModels.includes(savedModel ?? "") ? savedModel! : "gemini-3.6-flash";
   });
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -465,11 +462,8 @@ export default function AiAssistant() {
               className="min-w-[220px] rounded-md border border-slate-600/80 bg-[#0f172a] px-2 py-1.5 text-xs text-slate-100 outline-none ring-0 transition focus:border-primary focus:ring-2 focus:ring-primary/30"
               aria-label="Selecionar modelo de IA"
             >
-              <option value="gemini-4-argon" className="bg-[#0f172a] text-slate-100">Gemini 4 Argon - Máximo Desempenho</option>
-              <option value="gemini-2.5-pro" className="bg-[#0f172a] text-slate-100">Gemini 2.5 Pro - Raciocínio Avançado</option>
-              <option value="gemini-3.6-flash" className="bg-[#0f172a] text-slate-100">3.6 Flash - Resposta Rápida</option>
-              <option value="gemini-1.5-flash" className="bg-[#0f172a] text-slate-100">1.5 Flash - Padrão / Rápido</option>
-              <option value="gemini-1.5-pro" className="bg-[#0f172a] text-slate-100">1.5 Pro - Raciocínio Avançado</option>
+              <option value="gemini-3.6-flash" className="bg-[#0f172a] text-slate-100">Gemini 3.6 Flash - Padrão</option>
+              <option value="gemini-3.5-flash-lite" className="bg-[#0f172a] text-slate-100">Gemini 3.5 Flash-Lite - Super Rápido</option>
             </select>
           </label>
         </div>
