@@ -6,7 +6,6 @@ import {
   PlusCircle, 
   Trash2, 
   Image as ImageIcon, 
-  Download,
   AlertCircle,
   Mic
 } from "lucide-react";
@@ -25,10 +24,17 @@ import {
   writeStoredAiChats,
   type ChatSession,
 } from "@/lib/cloud-sync";
-import { useRecipes, uid } from "@/lib/store";
-import { type Recipe, defaultEquipment } from "@/lib/recipe-calc";
+import { useInventory, useRecipes, uid } from "@/lib/store";
+import { type Recipe, defaultEquipment, type InventoryItem } from "@/lib/recipe-calc";
+import { saveSettings } from "@/lib/settings";
 import { useNavigate } from "react-router-dom";
 import geminiLogo from "../../gemini-svg.svg";
+
+type AiAction = {
+  action: "ADD_INVENTORY" | "CREATE_RECIPE" | "UPDATE_SETTING";
+  payload: Record<string, unknown>;
+  message: string;
+};
 
 const parseRecipeMarkdown = (content: string) => {
   const trimmed = (content ?? "").trim();
@@ -63,6 +69,40 @@ const parseRecipeMarkdown = (content: string) => {
   }
 };
 
+const parseAiAction = (content: string): AiAction | null => {
+  const trimmed = (content ?? "").trim();
+  if (!trimmed) return null;
+
+  const candidates: string[] = [];
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenced) candidates.push(fenced[1].trim());
+
+  if (trimmed.startsWith("{")) {
+    candidates.push(trimmed);
+  } else {
+    const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
+    if (jsonMatch) candidates.push(jsonMatch[0]);
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object" && typeof parsed.action === "string" && typeof parsed.message === "string") {
+        return {
+          action: parsed.action,
+          payload: parsed.payload && typeof parsed.payload === "object" ? parsed.payload : {},
+          message: parsed.message,
+        };
+      }
+    } catch {
+      // Ignore malformed JSON and continue searching.
+    }
+  }
+
+  return null;
+};
+
+
 export default function AiAssistant() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [history, setHistory] = useState<ChatSession[]>([]);
@@ -93,6 +133,7 @@ export default function AiAssistant() {
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
   const { toast } = useToast();
   const [recipes, setRecipes] = useRecipes();
+  const [inventory, setInventory] = useInventory();
   const navigate = useNavigate();
 
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -336,7 +377,8 @@ export default function AiAssistant() {
         });
       }
 
-      if (!streamedText.trim()) {
+      const finalText = streamedText.trim();
+      if (!finalText) {
         setMessages((prev) => {
           const next = [...prev];
           const lastIndex = next.length - 1;
@@ -349,6 +391,23 @@ export default function AiAssistant() {
           persistChatHistory(next, currentChatId);
           return next;
         });
+      } else {
+        const action = parseAiAction(finalText);
+        if (action) {
+          applyAiAction(finalText);
+          setMessages((prev) => {
+            const next = [...prev];
+            const lastIndex = next.length - 1;
+            if (next[lastIndex]?.role === "model") {
+              next[lastIndex] = {
+                ...next[lastIndex],
+                content: action.message,
+              };
+            }
+            persistChatHistory(next, currentChatId);
+            return next;
+          });
+        }
       }
     } catch (error: any) {
       if (error?.name === "AbortError" || error?.message?.includes("aborted")) {
@@ -415,42 +474,75 @@ export default function AiAssistant() {
     setIsHistoryOpen(false);
   };
 
-  const handleImportRecipe = (content: string) => {
-    const recipeData = parseRecipeMarkdown(content)?.recipe ?? GeminiService.extractRecipe(content);
-    if (!recipeData) {
-      toast({
-        title: "Erro",
-        description: "Não foi possível extrair os dados da receita.",
-        variant: "destructive",
-      });
-      return;
-    }
+  const applyAiAction = (content: string) => {
+    const action = parseAiAction(content);
+    if (!action) return false;
 
-    const newRecipe: Recipe = {
-      id: uid(),
-      name: recipeData.name || "Nova Receita IA",
-      styleCode: recipeData.styleCode || "",
-      author: "IA Assistant",
-      notes: recipeData.notes || "",
-      equipment: recipeData.equipment || { ...defaultEquipment },
-      mashSteps: recipeData.mashSteps || [],
-      fermentationTempC: recipeData.fermentationTempC || 20,
-      fermentationDays: recipeData.fermentationDays || 14,
-      fermentables: recipeData.fermentables?.map(f => ({ ...f, id: uid(), price: 0 })) || [],
-      hops: recipeData.hops?.map(h => ({ ...h, id: uid(), price: 0 })) || [],
-      yeasts: recipeData.yeasts?.map(y => ({ ...y, id: uid(), price: 0 })) || [],
-      miscs: recipeData.miscs?.map(m => ({ ...m, id: uid(), price: 0 })) || [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    try {
+      switch (action.action) {
+        case "ADD_INVENTORY": {
+          const item = (action.payload?.item ?? action.payload) as Partial<InventoryItem> | undefined;
+          const normalizedItem: InventoryItem = {
+            id: String(item?.id ?? uid()),
+            kind: (item?.kind ?? "outro") as InventoryItem["kind"],
+            name: String(item?.name ?? "Item IA"),
+            amount: Number(item?.amount ?? 0),
+            unit: String(item?.unit ?? "un"),
+            price: Number(item?.price ?? 0),
+            minAmount: Number(item?.minAmount ?? 0),
+            alpha: item?.alpha,
+            potential: item?.potential,
+            color: item?.color,
+            attenuation: item?.attenuation,
+          };
 
-    if (confirm(`Deseja importar a receita "${newRecipe.name}"?`)) {
-      setRecipes([newRecipe, ...recipes]);
-      toast({
-        title: "Sucesso",
-        description: "Receita importada com sucesso!",
-      });
-      navigate(`/recipes/${newRecipe.id}`);
+          const existingItem = inventory.find((current) =>
+            current.kind === normalizedItem.kind && current.name.toLowerCase() === normalizedItem.name.toLowerCase(),
+          );
+
+          const nextInventory = existingItem
+            ? inventory.map((current) => current.id === existingItem.id
+              ? { ...current, ...normalizedItem, amount: Number(current.amount) + Number(normalizedItem.amount) }
+              : current)
+            : [normalizedItem, ...inventory];
+
+          setInventory(nextInventory);
+          return true;
+        }
+        case "CREATE_RECIPE": {
+          const recipeData = (action.payload?.recipe ?? action.payload) as Partial<Recipe> | undefined;
+          const newRecipe: Recipe = {
+            id: String(recipeData?.id ?? uid()),
+            name: recipeData?.name || "Nova Receita IA",
+            styleCode: recipeData?.styleCode || "",
+            author: "IA Assistant",
+            notes: recipeData?.notes || "",
+            equipment: recipeData?.equipment || { ...defaultEquipment },
+            mashSteps: recipeData?.mashSteps || [],
+            fermentationTempC: recipeData?.fermentationTempC || 20,
+            fermentationDays: recipeData?.fermentationDays || 14,
+            fermentables: recipeData?.fermentables?.map((f) => ({ ...f, id: uid(), price: 0 })) || [],
+            hops: recipeData?.hops?.map((h) => ({ ...h, id: uid(), price: 0 })) || [],
+            yeasts: recipeData?.yeasts?.map((y) => ({ ...y, id: uid(), price: 0 })) || [],
+            miscs: recipeData?.miscs?.map((m) => ({ ...m, id: uid(), price: 0 })) || [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          setRecipes((currentRecipes) => [newRecipe, ...currentRecipes]);
+          navigate(`/recipes/${newRecipe.id}`);
+          return true;
+        }
+        case "UPDATE_SETTING": {
+          saveSettings(action.payload as Record<string, unknown>);
+          return true;
+        }
+        default:
+          return false;
+      }
+    } catch (error) {
+      console.error("Failed to apply AI action", error);
+      return false;
     }
   };
 
@@ -589,7 +681,9 @@ export default function AiAssistant() {
             ) : (
               <div className="space-y-4">
                 {messages.map((m, i) => {
-                  const recipePreview = m.role === "model" ? parseRecipeMarkdown(m.content) : null;
+                  const action = m.role === "model" ? parseAiAction(m.content) : null;
+                  const recipePreview = !action && m.role === "model" ? parseRecipeMarkdown(m.content) : null;
+                  const displayContent = action ? action.message : recipePreview?.explanation || m.content;
 
                   return (
                     <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -614,18 +708,9 @@ export default function AiAssistant() {
                                     {recipePreview.explanation}
                                   </p>
                                 )}
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  className="w-full gap-2 justify-center"
-                                  onClick={() => handleImportRecipe(m.content)}
-                                >
-                                  <Download className="w-4 h-4" />
-                                  Importar Receita: {recipePreview.recipe?.name || "Sem nome"}
-                                </Button>
                               </div>
                             ) : (
-                              <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.content}</p>
+                              <p className="text-sm whitespace-pre-wrap leading-relaxed">{displayContent}</p>
                             )}
                           </div>
 
