@@ -479,32 +479,61 @@ export default function AiAssistant() {
     if (!action) return false;
 
     try {
+      console.log("Ação interceptada:", action);
+
       switch (action.action) {
         case "ADD_INVENTORY": {
-          const item = (action.payload?.item ?? action.payload) as Partial<InventoryItem> | undefined;
-          const normalizedItem: InventoryItem = {
-            id: String(item?.id ?? uid()),
-            kind: (item?.kind ?? "outro") as InventoryItem["kind"],
-            name: String(item?.name ?? "Item IA"),
-            amount: Number(item?.amount ?? 0),
-            unit: String(item?.unit ?? "un"),
-            price: Number(item?.price ?? 0),
-            minAmount: Number(item?.minAmount ?? 0),
-            alpha: item?.alpha,
-            potential: item?.potential,
-            color: item?.color,
-            attenuation: item?.attenuation,
+          const rawItem = (action.payload?.item ?? action.payload) as Record<string, unknown>;
+          const normalizedType = String(rawItem.type ?? rawItem.kind ?? "Misc");
+          const typeMap: Record<string, InventoryItem["kind"]> = {
+            Fermentable: "fermentavel",
+            fermentable: "fermentavel",
+            Hop: "lupulo",
+            hop: "lupulo",
+            Yeast: "levedura",
+            yeast: "levedura",
+            Misc: "outro",
+            misc: "outro",
+          };
+
+          const kind = typeMap[normalizedType] ?? "outro";
+          const amountRaw = Number(rawItem.amount ?? 0);
+          const amount = Number.isFinite(amountRaw) ? amountRaw : 0;
+          const name = String(rawItem.name ?? "Item IA").trim() || "Item IA";
+          const unitFromType: Record<InventoryItem["kind"], string> = {
+            fermentavel: "kg",
+            lupulo: "g",
+            levedura: "pacote",
+            outro: "un",
+          };
+          const requestedUnit = String(rawItem.unit ?? "").trim();
+          const unit = requestedUnit && ["kg", "g", "L", "ml", "un", "pacote"].includes(requestedUnit)
+            ? requestedUnit === "L" || requestedUnit === "ml" ? (kind === "fermentavel" ? "kg" : kind === "lupulo" ? "g" : requestedUnit === "L" ? "L" : "ml") : requestedUnit === "un" && kind === "levedura" ? "pacote" : requestedUnit
+            : unitFromType[kind];
+
+          const item: InventoryItem = {
+            id: String(rawItem.id ?? (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString())),
+            kind,
+            name,
+            amount,
+            unit,
+            price: Number(rawItem.price ?? 0),
+            minAmount: Number(rawItem.minAmount ?? 0),
+            alpha: rawItem.alpha !== undefined && rawItem.alpha !== null ? Number(rawItem.alpha) : undefined,
+            potential: rawItem.potential !== undefined && rawItem.potential !== null ? Number(rawItem.potential) : undefined,
+            color: rawItem.color !== undefined && rawItem.color !== null ? Number(rawItem.color) : undefined,
+            attenuation: rawItem.attenuation !== undefined && rawItem.attenuation !== null ? Number(rawItem.attenuation) : undefined,
           };
 
           const existingItem = inventory.find((current) =>
-            current.kind === normalizedItem.kind && current.name.toLowerCase() === normalizedItem.name.toLowerCase(),
+            current.kind === item.kind && current.name.toLowerCase() === item.name.toLowerCase(),
           );
 
           const nextInventory = existingItem
             ? inventory.map((current) => current.id === existingItem.id
-              ? { ...current, ...normalizedItem, amount: Number(current.amount) + Number(normalizedItem.amount) }
+              ? { ...current, ...item, amount: Number(current.amount) + Number(item.amount) }
               : current)
-            : [normalizedItem, ...inventory];
+            : [item, ...inventory];
 
           setInventory(nextInventory);
           return true;
