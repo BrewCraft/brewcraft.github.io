@@ -16,6 +16,7 @@ import {
   Clock3,
   Sparkles,
   Cloud,
+  Download,
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useSettings } from "@/lib/settings";
@@ -184,6 +185,19 @@ export function AppSidebar() {
                     <Cloud className="h-4 w-4" />
                     <span>{t("Nuvem e sincronização", "Cloud & sync")}</span>
                   </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <button
+                    type="button"
+                    onClick={() => console.log("Offline version pending")}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span>{t("Versão Offline", "Offline Version")}</span>
+                  </button>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
