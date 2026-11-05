@@ -2,18 +2,18 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { type Recipe } from "./recipe-calc";
 
 export const ALLOWED_GEMINI_MODELS = [
+  "gemini-4-argon",
+  "gemini-2.5-pro",
+  "gemini-3.6-flash",
   "gemini-1.5-flash",
   "gemini-1.5-pro",
-  "gemini-3.6-flash",
-  "gemini-3.5-flash-lite",
-  "gemini-3.1-flash-lite",
 ] as const;
 
 export const resolveGeminiModelName = (modelName?: string | null) => {
   const normalized = (modelName ?? "").trim();
   return ALLOWED_GEMINI_MODELS.includes(normalized as typeof ALLOWED_GEMINI_MODELS[number])
     ? normalized
-    : "gemini-3.6-flash";
+    : "gemini-4-argon";
 };
 
 // Types
@@ -65,7 +65,7 @@ export class GeminiService {
   private genAI: GoogleGenerativeAI;
   private model: any;
 
-  constructor(apiKey: string, modelName: string = "gemini-3.6-flash") {
+  constructor(apiKey: string, modelName: string = "gemini-4-argon") {
     this.genAI = new GoogleGenerativeAI(apiKey);
     const resolvedModelName = resolveGeminiModelName(modelName);
 
