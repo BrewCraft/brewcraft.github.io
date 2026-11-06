@@ -4,9 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Beer, Copy, Plus, Search, Star, Trash2 } from "lucide-react";
+import { Copy, Plus, Search, Star, Trash2 } from "lucide-react";
 import { recipeStats, srmToHex } from "@/lib/recipe-calc";
 import { allStyles, fmt, money, uid, useRecipes } from "@/lib/store";
+import CanecaLimpa from "@/components/CanecaLimpa";
 
 export default function RecipesPage() {
   const navigate = useNavigate();
@@ -39,11 +40,7 @@ export default function RecipesPage() {
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-3">
-                    <Beer
-                      fill={srmToHex(s.srm)}
-                      color={srmToHex(s.srm)}
-                      className="h-10 w-10 flex-shrink-0"
-                    />
+                    <CanecaLimpa color={srmToHex(s.srm)} className="w-24 h-auto flex-shrink-0" />
                     <div><CardTitle className="text-lg">{r.name}</CardTitle><p className="text-sm text-muted-foreground">{style?.name ?? "Sem estilo"}</p></div>
                   </div>
                   <div className="flex" onClick={e => e.stopPropagation()}>
