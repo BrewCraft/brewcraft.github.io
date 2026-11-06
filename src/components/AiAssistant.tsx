@@ -25,9 +25,8 @@ import {
   type ChatSession,
 } from "@/lib/cloud-sync";
 import { useInventory, useRecipes, uid } from "@/lib/store";
-import { type Recipe, defaultEquipment, type InventoryItem } from "@/lib/recipe-calc";
+import { type Recipe, defaultEquipment, recipeStats, type InventoryItem } from "@/lib/recipe-calc";
 import { saveSettings } from "@/lib/settings";
-import { useNavigate } from "react-router-dom";
 import geminiLogo from "../../gemini-svg.svg";
 
 type AiAction = {
@@ -134,7 +133,6 @@ export default function AiAssistant() {
   const { toast } = useToast();
   const [recipes, setRecipes] = useRecipes();
   const [inventory, setInventory] = useInventory();
-  const navigate = useNavigate();
 
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
   const totalHistorySizeMB = history.reduce((total, chat) => total + Number(getSizeMB(chat)), 0);
@@ -474,6 +472,104 @@ export default function AiAssistant() {
     setIsHistoryOpen(false);
   };
 
+  const normalizeAiRecipe = (recipeLike: Partial<Recipe> & Record<string, any> | undefined) => {
+    const payload = recipeLike ?? {};
+    const defaultFermentable = { id: uid(), name: "Pale Ale", kg: 4, potential: 1.037, color: 3, type: "grao", price: 0 };
+    const defaultHop = { id: uid(), name: "Cascade", grams: 25, alpha: 5.5, minutes: 60, use: "fervura" as const, price: 0 };
+    const defaultYeast = { id: uid(), name: "SafAle US-05", attenuation: 81, packs: 1, price: 0 };
+
+    const equipment = {
+      ...(defaultEquipment),
+      ...((payload.equipment ?? {}) as Partial<Recipe["equipment"]>),
+      batchL: Number((payload.equipment as any)?.batchL ?? payload.batchSize ?? defaultEquipment.batchL) || defaultEquipment.batchL,
+      boilMinutes: Number((payload.equipment as any)?.boilMinutes ?? payload.boilTime ?? defaultEquipment.boilMinutes) || defaultEquipment.boilMinutes,
+      efficiency: Number((payload.equipment as any)?.efficiency ?? payload.efficiency ?? defaultEquipment.efficiency) || defaultEquipment.efficiency,
+    };
+
+    const normalizeUse = (value: unknown) => {
+      const raw = String(value ?? "fervura").trim().toLowerCase();
+      if (raw.includes("dry") || raw.includes("dryhop") || raw.includes("dry-hop")) return "dryhop";
+      if (raw.includes("whirl") || raw.includes("whirlpool")) return "whirlpool";
+      if (raw.includes("mosto") || raw.includes("first wort") || raw.includes("first_wort")) return "primeiro_mosto";
+      return "fervura";
+    };
+
+    const fermentables = ((payload.fermentables as Array<Record<string, unknown>> | undefined) ?? []).length > 0
+      ? (payload.fermentables as Array<Record<string, unknown>>).map((item, index) => ({
+          id: String((item as any)?.id ?? `${uid()}-${index}`),
+          name: String((item as any)?.name ?? defaultFermentable.name),
+          kg: Number((item as any)?.kg ?? (item as any)?.amount ?? 0),
+          potential: Number((item as any)?.potential ?? (item as any)?.yield ?? 80) > 0
+            ? 1 + (((Number((item as any)?.potential ?? (item as any)?.yield ?? 80) / 100) * 0.046))
+            : defaultFermentable.potential,
+          color: Number((item as any)?.color ?? 0),
+          type: String((item as any)?.type ?? "grao"),
+          price: Number((item as any)?.price ?? 0),
+        }))
+      : [defaultFermentable];
+
+    const hops = ((payload.hops as Array<Record<string, unknown>> | undefined) ?? []).length > 0
+      ? (payload.hops as Array<Record<string, unknown>>).map((item, index) => ({
+          id: String((item as any)?.id ?? `${uid()}-${index}`),
+          name: String((item as any)?.name ?? defaultHop.name),
+          grams: Number((item as any)?.grams ?? (item as any)?.amount ?? 0),
+          alpha: Number((item as any)?.alpha ?? 5),
+          minutes: Number((item as any)?.minutes ?? (item as any)?.time ?? 60),
+          use: normalizeUse((item as any)?.use),
+          price: Number((item as any)?.price ?? 0),
+        }))
+      : [defaultHop];
+
+    const yeasts = ((payload.yeasts as Array<Record<string, unknown>> | undefined) ?? []).length > 0
+      ? (payload.yeasts as Array<Record<string, unknown>>).map((item, index) => ({
+          id: String((item as any)?.id ?? `${uid()}-${index}`),
+          name: String((item as any)?.name ?? defaultYeast.name),
+          attenuation: Number((item as any)?.attenuation ?? 75),
+          packs: Number((item as any)?.packs ?? 1),
+          price: Number((item as any)?.price ?? 0),
+        }))
+      : [defaultYeast];
+
+    const recipe: Recipe = {
+      id: String(payload.id ?? crypto?.randomUUID?.() ?? uid()),
+      name: String(payload.name ?? "Nova Receita IA").trim() || "Nova Receita IA",
+      styleCode: String(payload.styleCode ?? payload.style ?? "").trim(),
+      author: "IA Assistant",
+      notes: String(payload.notes ?? `Receita gerada automaticamente pela IA em ${new Date().toISOString()}`),
+      equipment,
+      mashSteps: Array.isArray(payload.mashSteps) ? payload.mashSteps.map((step: any, index: number) => ({
+        name: String(step?.name ?? `Etapa ${index + 1}`),
+        tempC: Number(step?.tempC ?? 66),
+        minutes: Number(step?.minutes ?? 60),
+      })) : [{ name: "Sacarificação", tempC: 66, minutes: 60 }],
+      fermentationTempC: Number(payload.fermentationTempC ?? 19),
+      fermentationDays: Number(payload.fermentationDays ?? 14),
+      fermentables,
+      hops,
+      yeasts,
+      miscs: Array.isArray(payload.miscs) ? payload.miscs.map((item: any, index: number) => ({
+        id: String(item?.id ?? `${uid()}-${index}`),
+        name: String(item?.name ?? "Adjunto"),
+        amount: Number(item?.amount ?? 0),
+        unit: String(item?.unit ?? "un"),
+        use: String(item?.use ?? "Fervura"),
+        price: Number(item?.price ?? 0),
+      })) : [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const computedStats = recipeStats(recipe);
+    return {
+      ...recipe,
+      og: computedStats.og,
+      fg: computedStats.fg,
+      abv: computedStats.abv,
+      ibu: computedStats.ibu,
+      srm: computedStats.srm,
+    } as Recipe & { og: number; fg: number; abv: number; ibu: number; srm: number };
+  };
+
   const applyAiAction = (content: string) => {
     try {
       const action = parseAiAction(content);
@@ -551,27 +647,10 @@ export default function AiAssistant() {
           return true;
         }
         case "CREATE_RECIPE": {
-          const recipeData = (action.payload?.recipe ?? action.payload) as Partial<Recipe> | undefined;
-          const newRecipe: Recipe = {
-            id: String(recipeData?.id ?? uid()),
-            name: recipeData?.name || "Nova Receita IA",
-            styleCode: recipeData?.styleCode || "",
-            author: "IA Assistant",
-            notes: recipeData?.notes || "",
-            equipment: recipeData?.equipment || { ...defaultEquipment },
-            mashSteps: recipeData?.mashSteps || [],
-            fermentationTempC: recipeData?.fermentationTempC || 20,
-            fermentationDays: recipeData?.fermentationDays || 14,
-            fermentables: recipeData?.fermentables?.map((f) => ({ ...f, id: uid(), price: 0 })) || [],
-            hops: recipeData?.hops?.map((h) => ({ ...h, id: uid(), price: 0 })) || [],
-            yeasts: recipeData?.yeasts?.map((y) => ({ ...y, id: uid(), price: 0 })) || [],
-            miscs: recipeData?.miscs?.map((m) => ({ ...m, id: uid(), price: 0 })) || [],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          };
+          const recipeData = (action.payload?.recipe ?? action.payload) as Partial<Recipe> & Record<string, unknown> | undefined;
+          const newRecipe = normalizeAiRecipe(recipeData);
 
-          setRecipes((currentRecipes) => [newRecipe, ...currentRecipes]);
-          navigate(`/recipes/${newRecipe.id}`);
+          setRecipes((currentRecipes) => [...currentRecipes, newRecipe]);
           return true;
         }
         case "UPDATE_SETTING": {
