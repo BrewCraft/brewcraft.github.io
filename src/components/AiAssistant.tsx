@@ -475,16 +475,21 @@ export default function AiAssistant() {
   };
 
   const applyAiAction = (content: string) => {
-    const action = parseAiAction(content);
-    if (!action) return false;
-
     try {
-      console.log("Ação interceptada:", action);
+      const action = parseAiAction(content);
+      if (!action) return false;
+
+      const parsedData = action;
+      console.log("Ação interceptada:", parsedData);
 
       switch (action.action) {
         case "ADD_INVENTORY": {
-          const rawItem = (action.payload?.item ?? action.payload) as Record<string, unknown>;
-          const normalizedType = String(rawItem.type ?? rawItem.kind ?? "Misc");
+          const rawItem = (action.payload?.item ?? action.payload) as Record<string, unknown> | undefined;
+          if (!rawItem || typeof rawItem !== "object") {
+            throw new Error("Payload de inventário inválido: objeto ausente.");
+          }
+
+          const normalizedType = String(rawItem.type ?? rawItem.kind ?? "Misc").trim();
           const typeMap: Record<string, InventoryItem["kind"]> = {
             Fermentable: "fermentavel",
             fermentable: "fermentavel",
@@ -499,24 +504,27 @@ export default function AiAssistant() {
           const kind = typeMap[normalizedType] ?? "outro";
           const amountRaw = Number(rawItem.amount ?? 0);
           const amount = Number.isFinite(amountRaw) ? amountRaw : 0;
-          const name = String(rawItem.name ?? "Item IA").trim() || "Item IA";
-          const unitFromType: Record<InventoryItem["kind"], string> = {
-            fermentavel: "kg",
-            lupulo: "g",
-            levedura: "pacote",
-            outro: "un",
-          };
+          const name = String(rawItem.name ?? "").trim() || "Item IA";
+
+          const validInventoryUnits = new Set(["kg", "g", "L", "ml", "un"]);
           const requestedUnit = String(rawItem.unit ?? "").trim();
-          const unit = requestedUnit && ["kg", "g", "L", "ml", "un", "pacote"].includes(requestedUnit)
-            ? requestedUnit === "L" || requestedUnit === "ml" ? (kind === "fermentavel" ? "kg" : kind === "lupulo" ? "g" : requestedUnit === "L" ? "L" : "ml") : requestedUnit === "un" && kind === "levedura" ? "pacote" : requestedUnit
-            : unitFromType[kind];
+          const normalizedUnit = validInventoryUnits.has(requestedUnit) ? requestedUnit : (() => {
+            if (kind === "fermentavel") return "kg";
+            if (kind === "lupulo") return "g";
+            if (kind === "levedura") return "un";
+            return "un";
+          })();
 
           const item: InventoryItem = {
-            id: String(rawItem.id ?? (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString())),
+            id: typeof rawItem.id === "string" && rawItem.id.trim()
+              ? rawItem.id.trim()
+              : (typeof globalThis.crypto !== "undefined" && "randomUUID" in globalThis.crypto
+                ? globalThis.crypto.randomUUID()
+                : Date.now().toString()),
             kind,
             name,
             amount,
-            unit,
+            unit: kind === "levedura" ? "pacote" : normalizedUnit,
             price: Number(rawItem.price ?? 0),
             minAmount: Number(rawItem.minAmount ?? 0),
             alpha: rawItem.alpha !== undefined && rawItem.alpha !== null ? Number(rawItem.alpha) : undefined,
@@ -524,6 +532,10 @@ export default function AiAssistant() {
             color: rawItem.color !== undefined && rawItem.color !== null ? Number(rawItem.color) : undefined,
             attenuation: rawItem.attenuation !== undefined && rawItem.attenuation !== null ? Number(rawItem.attenuation) : undefined,
           };
+
+          if (!item.name) {
+            throw new Error("Inventário IA: o nome do item não pode ficar vazio.");
+          }
 
           const existingItem = inventory.find((current) =>
             current.kind === item.kind && current.name.toLowerCase() === item.name.toLowerCase(),
