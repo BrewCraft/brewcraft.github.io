@@ -2,15 +2,22 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { type Recipe } from "./recipe-calc";
 
 export const ALLOWED_GEMINI_MODELS = [
-  "gemini-3.6-flash",
-  "gemini-3.5-flash-lite",
+  "gemini-2.0-flash-exp",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-8b",
 ] as const;
+
+const FALLBACK_MODELS = [
+  "gemini-2.0-flash-exp",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-8b",
+];
 
 export const resolveGeminiModelName = (modelName?: string | null) => {
   const normalized = (modelName ?? "").trim();
   return ALLOWED_GEMINI_MODELS.includes(normalized as typeof ALLOWED_GEMINI_MODELS[number])
-    ? normalized
-    : "gemini-3.6-flash";
+  ? normalized
+  : "gemini-2.0-flash-exp";
 };
 
 // Types
@@ -63,14 +70,18 @@ Diretrizes:
 
 export class GeminiService {
   private genAI: GoogleGenerativeAI;
-  private model: any;
+  private apiKey: string;
+  private modelName: string;
 
-  constructor(apiKey: string, modelName: string = "gemini-3.6-flash") {
+  constructor(apiKey: string, modelName: string = "gemini-2.0-flash-exp") {
+    this.apiKey = apiKey;
+    this.modelName = resolveGeminiModelName(modelName);
     this.genAI = new GoogleGenerativeAI(apiKey);
-    const resolvedModelName = resolveGeminiModelName(modelName);
+  }
 
-    this.model = this.genAI.getGenerativeModel({
-      model: resolvedModelName,
+  private getModel(name: string) {
+    return this.genAI.getGenerativeModel({
+      model: name,
       systemInstruction: SYSTEM_PROMPT,
       tools: [
         {
@@ -81,103 +92,116 @@ export class GeminiService {
   }
 
   async chat(messages: Message[], context?: any, signal?: AbortSignal) {
-    const controller = new AbortController();
+    const modelsToTry = [this.modelName, ...FALLBACK_MODELS.filter(m => m !== this.modelName)];
 
-    if (signal) {
-      if (signal.aborted) {
-        controller.abort();
-      } else {
-        signal.addEventListener("abort", () => controller.abort(), { once: true });
-      }
-    }
+    for (const modelName of modelsToTry) {
+      try {
+        const model = this.getModel(modelName);
+        const history = messages.slice(0, -1).map(m => ({
+          role: m.role === "system" ? "user" : m.role,
+          parts: [{ text: m.content || "" }],
+        }));
 
-    try {
-      const history = messages.slice(0, -1).map(m => ({
-        role: m.role === "system" ? "user" : m.role,
-        parts: [{ text: m.content || "" }],
-      }));
+        const lastMessage = messages[messages.length - 1] ?? { role: "user", content: "Olá" };
+        const chatSession = model.startChat({ history });
 
-      const lastMessage = messages[messages.length - 1] ?? { role: "user", content: "Olá" };
-      const chatSession = this.model.startChat({ history });
+        let promptParts: any[] = [{ text: lastMessage.content || "Olá" }];
 
-      let promptParts: any[] = [{ text: lastMessage.content || "Olá" }];
+        if (context) {
+          promptParts[0].text += `\n\nContexto do BrewCraft: ${JSON.stringify(context)}`;
+        }
 
-      if (context) {
-        promptParts[0].text += `\n\nContexto do BrewCraft: ${JSON.stringify(context)}`;
-      }
+        if (lastMessage.image) {
+          const imageData = lastMessage.image.split(",")[1];
+          const mimeMatch = lastMessage.image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
+          const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
 
-      if (lastMessage.image) {
-        const imageData = lastMessage.image.split(",")[1];
-        const mimeMatch = lastMessage.image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
-        const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+          promptParts = [
+            { text: lastMessage.content || "Analise esta imagem:" },
+            { inlineData: { data: imageData, mimeType } },
+          ];
 
-        promptParts = [
-          { text: lastMessage.content || "Analise esta imagem:" },
-          { inlineData: { data: imageData, mimeType } },
-        ];
+          const result = await model.generateContent(promptParts, { signal });
+          const text = await result.response.text();
+          return text?.trim() || "";
+        }
 
-        const result = await this.model.generateContent(promptParts, { signal: controller.signal });
+        const result = await chatSession.sendMessage(promptParts, { signal });
         const text = await result.response.text();
         return text?.trim() || "";
+      } catch (error: any) {
+        const isQuotaError = error?.message?.includes("429") || error?.status === 429;
+        const isLastModel = modelName === modelsToTry[modelsToTry.length - 1];
+
+        if (isQuotaError && !isLastModel) {
+          console.warn(`Modelo ${modelName} esgotado (429), tentando próximo fallback...`);
+          continue;
+        }
+
+        if (error?.name === "AbortError" || error?.message?.includes("aborted")) {
+          return "";
+        }
+
+        console.error(`Gemini API Error (${modelName}):`, error);
+        if (isLastModel) {
+          throw new Error(typeof error?.message === "string" ? error.message : "Falha na comunicação com o Gemini");
+        }
       }
-
-      const result = await chatSession.sendMessage(promptParts, { signal: controller.signal });
-      const text = await result.response.text();
-      return text?.trim() || "";
-    } catch (error: any) {
-      if (error?.name === "AbortError" || error?.message?.includes("aborted")) {
-        return "";
-      }
-
-      console.error("Gemini API Error:", error);
-
-      const message = typeof error?.message === "string"
-        ? error.message
-        : "Falha na comunicação com o Gemini";
-
-      throw new Error(message);
     }
+    return "";
   }
 
   async chatStream(messages: Message[], context?: any, signal?: AbortSignal) {
-    const controller = new AbortController();
+    const modelsToTry = [this.modelName, ...FALLBACK_MODELS.filter(m => m !== this.modelName)];
 
-    if (signal) {
-      if (signal.aborted) {
-        controller.abort();
-      } else {
-        signal.addEventListener("abort", () => controller.abort(), { once: true });
+    for (const modelName of modelsToTry) {
+      try {
+        const model = this.getModel(modelName);
+        const history = messages.slice(0, -1).map(m => ({
+          role: m.role === "system" ? "user" : m.role,
+          parts: [{ text: m.content || "" }],
+        }));
+
+        const lastMessage = messages[messages.length - 1] ?? { role: "user", content: "Olá" };
+        const chatSession = model.startChat({ history });
+
+        let promptParts: any[] = [{ text: lastMessage.content || "Olá" }];
+
+        if (context) {
+          promptParts[0].text += `\n\nContexto do BrewCraft: ${JSON.stringify(context)}`;
+        }
+
+        if (lastMessage.image) {
+          const imageData = lastMessage.image.split(",")[1];
+          const mimeMatch = lastMessage.image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
+          const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+
+          promptParts = [
+            { text: lastMessage.content || "Analise esta imagem:" },
+            { inlineData: { data: imageData, mimeType } },
+          ];
+
+          return await model.generateContentStream(promptParts, { signal });
+        }
+
+        return await chatSession.sendMessageStream(promptParts, { signal });
+      } catch (error: any) {
+        const isQuotaError = error?.message?.includes("429") || error?.status === 429;
+        const isLastModel = modelName === modelsToTry[modelsToTry.length - 1];
+
+        if (isQuotaError && !isLastModel) {
+          console.warn(`Modelo ${modelName} esgotado (429), tentando próximo fallback...`);
+          continue;
+        }
+
+        if (error?.name === "AbortError" || error?.message?.includes("aborted")) {
+          throw error;
+        }
+
+        if (isLastModel) throw error;
       }
     }
-
-    const history = messages.slice(0, -1).map(m => ({
-      role: m.role === "system" ? "user" : m.role,
-      parts: [{ text: m.content || "" }],
-    }));
-
-    const lastMessage = messages[messages.length - 1] ?? { role: "user", content: "Olá" };
-    const chatSession = this.model.startChat({ history });
-
-    let promptParts: any[] = [{ text: lastMessage.content || "Olá" }];
-
-    if (context) {
-      promptParts[0].text += `\n\nContexto do BrewCraft: ${JSON.stringify(context)}`;
-    }
-
-    if (lastMessage.image) {
-      const imageData = lastMessage.image.split(",")[1];
-      const mimeMatch = lastMessage.image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
-      const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
-
-      promptParts = [
-        { text: lastMessage.content || "Analise esta imagem:" },
-        { inlineData: { data: imageData, mimeType } },
-      ];
-
-      return await this.model.generateContentStream(promptParts, { signal: controller.signal });
-    }
-
-    return await chatSession.sendMessageStream(promptParts, { signal: controller.signal });
+    throw new Error("Todos os modelos falharam");
   }
 
   // Extract JSON recipe from text response
