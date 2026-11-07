@@ -494,48 +494,48 @@ export default function AiAssistant() {
       return "fervura";
     };
 
-    const fermentables = ((payload.fermentables as Array<Record<string, unknown>> | undefined) ?? []).length > 0
-      ? (payload.fermentables as Array<Record<string, unknown>>).map((item, index) => ({
-          id: String((item as any)?.id ?? `${uid()}-${index}`),
-          name: String((item as any)?.name ?? defaultFermentable.name),
-          kg: Number((item as any)?.kg ?? (item as any)?.amount ?? 0),
-          potential: Number((item as any)?.potential ?? (item as any)?.yield ?? 80) > 0
-            ? 1 + (((Number((item as any)?.potential ?? (item as any)?.yield ?? 80) / 100) * 0.046))
+    const fermentables = Array.isArray(payload.fermentables) && payload.fermentables.length > 0
+      ? payload.fermentables.map((item: any, index: number) => ({
+          id: String(item?.id ?? `${uid()}-${index}`),
+          name: String(item?.name ?? defaultFermentable.name),
+          kg: Number(item?.kg ?? item?.amount ?? 0),
+          potential: Number(item?.potential ?? item?.yield ?? 80) > 0
+            ? (Number(item?.potential ?? item?.yield ?? 80) < 2 ? Number(item?.potential ?? item?.yield) : 1 + (((Number(item?.potential ?? item?.yield ?? 80) / 100) * 0.046)))
             : defaultFermentable.potential,
-          color: Number((item as any)?.color ?? 0),
-          type: String((item as any)?.type ?? "grao"),
-          price: Number((item as any)?.price ?? 0),
+          color: Number(item?.color ?? 0),
+          type: String(item?.type ?? "grao"),
+          price: Number(item?.price ?? 0),
         }))
       : [defaultFermentable];
 
-    const hops = ((payload.hops as Array<Record<string, unknown>> | undefined) ?? []).length > 0
-      ? (payload.hops as Array<Record<string, unknown>>).map((item, index) => ({
-          id: String((item as any)?.id ?? `${uid()}-${index}`),
-          name: String((item as any)?.name ?? defaultHop.name),
-          grams: Number((item as any)?.grams ?? (item as any)?.amount ?? 0),
-          alpha: Number((item as any)?.alpha ?? 5),
-          minutes: Number((item as any)?.minutes ?? (item as any)?.time ?? 60),
-          use: normalizeUse((item as any)?.use),
-          price: Number((item as any)?.price ?? 0),
+    const hops = Array.isArray(payload.hops) && payload.hops.length > 0
+      ? payload.hops.map((item: any, index: number) => ({
+          id: String(item?.id ?? `${uid()}-${index}`),
+          name: String(item?.name ?? defaultHop.name),
+          grams: Number(item?.grams ?? item?.amount ?? 0),
+          alpha: Number(item?.alpha ?? 5),
+          minutes: Number(item?.minutes ?? item?.time ?? 60),
+          use: normalizeUse(item?.use),
+          price: Number(item?.price ?? 0),
         }))
       : [defaultHop];
 
-    const yeasts = ((payload.yeasts as Array<Record<string, unknown>> | undefined) ?? []).length > 0
-      ? (payload.yeasts as Array<Record<string, unknown>>).map((item, index) => ({
-          id: String((item as any)?.id ?? `${uid()}-${index}`),
-          name: String((item as any)?.name ?? defaultYeast.name),
-          attenuation: Number((item as any)?.attenuation ?? 75),
-          packs: Number((item as any)?.packs ?? 1),
-          price: Number((item as any)?.price ?? 0),
+    const yeasts = Array.isArray(payload.yeasts) && payload.yeasts.length > 0
+      ? payload.yeasts.map((item: any, index: number) => ({
+          id: String(item?.id ?? `${uid()}-${index}`),
+          name: String(item?.name ?? defaultYeast.name),
+          attenuation: Number(item?.attenuation ?? 75),
+          packs: Number(item?.packs ?? 1),
+          price: Number(item?.price ?? 0),
         }))
       : [defaultYeast];
 
-    const recipe: Recipe = {
-      id: String(payload.id ?? crypto?.randomUUID?.() ?? uid()),
+    const finalRecipe: Recipe = {
+      id: String(payload.id ?? uid()),
       name: String(payload.name ?? "Nova Receita IA").trim() || "Nova Receita IA",
-      styleCode: String(payload.styleCode ?? payload.style ?? "").trim(),
-      author: "IA Assistant",
-      notes: String(payload.notes ?? `Receita gerada automaticamente pela IA em ${new Date().toISOString()}`),
+      styleCode: String(payload.styleCode ?? payload.style ?? "Sem Estilo").trim(),
+      author: String(payload.author ?? "IA Assistant"),
+      notes: String(payload.notes ?? `Receita gerada automaticamente pela IA em ${new Date().toLocaleString("pt-BR")}`),
       equipment,
       mashSteps: Array.isArray(payload.mashSteps) ? payload.mashSteps.map((step: any, index: number) => ({
         name: String(step?.name ?? `Etapa ${index + 1}`),
@@ -555,19 +555,19 @@ export default function AiAssistant() {
         use: String(item?.use ?? "Fervura"),
         price: Number(item?.price ?? 0),
       })) : [],
-      createdAt: new Date().toISOString(),
+      createdAt: String(payload.createdAt ?? new Date().toISOString()),
       updatedAt: new Date().toISOString(),
     };
 
-    const computedStats = recipeStats(recipe);
+    const computedStats = recipeStats(finalRecipe);
     return {
-      ...recipe,
+      ...finalRecipe,
       og: computedStats.og,
       fg: computedStats.fg,
       abv: computedStats.abv,
       ibu: computedStats.ibu,
       srm: computedStats.srm,
-    } as Recipe & { og: number; fg: number; abv: number; ibu: number; srm: number };
+    };
   };
 
   const applyAiAction = (content: string) => {
@@ -650,7 +650,7 @@ export default function AiAssistant() {
           const recipeData = (action.payload?.recipe ?? action.payload) as Partial<Recipe> & Record<string, unknown> | undefined;
           const newRecipe = normalizeAiRecipe(recipeData);
 
-          setRecipes((currentRecipes) => [...currentRecipes, newRecipe]);
+          setRecipes([...recipes, newRecipe as Recipe]);
           return true;
         }
         case "UPDATE_RECIPE": {
