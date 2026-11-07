@@ -118,7 +118,7 @@ export default function AiAssistant() {
   const [retryMessage, setRetryMessage] = useState<{ text: string; image?: string } | null>(null);
   const [selectedModel, setSelectedModel] = useState(() => {
     if (typeof window === "undefined") return "gemini-2.0-flash-exp";
-    const savedModel = localStorage.getItem("brewcraft-ai-model");
+    const savedModel = localStorage.getItem("brewcraft-ai-model")?.trim();
     const allowedModels = [
       "gemini-2.0-flash-exp",
       "gemini-1.5-flash",
@@ -156,6 +156,22 @@ export default function AiAssistant() {
   useEffect(() => {
     localStorage.setItem(AI_SYNC_ENABLED_STORAGE_KEY, String(cloudSyncEnabled));
   }, [cloudSyncEnabled]);
+
+  useEffect(() => {
+    if (!apiKey || typeof window === "undefined") return;
+
+    const fetchAvailableModels = async () => {
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
+        const payload = await response.json();
+        console.log("Modelos Gemini disponíveis para esta API Key:", payload);
+      } catch (error) {
+        console.error("Erro ao listar modelos Gemini:", error);
+      }
+    };
+
+    void fetchAvailableModels();
+  }, [apiKey]);
 
   useEffect(() => {
     const savedChats = readStoredAiChats();
@@ -408,14 +424,17 @@ export default function AiAssistant() {
           });
         }
       }
-    } catch (error: any) {
-      if (error?.name === "AbortError" || error?.message?.includes("aborted")) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Não foi possível obter resposta da IA";
+      const name = error instanceof Error ? error.name : "Error";
+
+      if (name === "AbortError" || message.includes("aborted")) {
         return;
       }
 
       toast({
         title: "Erro",
-        description: error.message || "Não foi possível obter resposta da IA",
+        description: message,
         variant: "destructive",
       });
     } finally {
@@ -473,8 +492,9 @@ export default function AiAssistant() {
     setIsHistoryOpen(false);
   };
 
-  const normalizeAiRecipe = (recipeLike: Partial<Recipe> & Record<string, any> | undefined) => {
+  const normalizeAiRecipe = (recipeLike: Partial<Recipe> & Record<string, unknown> | undefined) => {
     const payload = recipeLike ?? {};
+    const equipmentSource = (payload.equipment ?? {}) as Record<string, unknown>;
     const defaultFermentable = { id: uid(), name: "Pale Ale", kg: 4, potential: 1.037, color: 3, type: "grao", price: 0 };
     const defaultHop = { id: uid(), name: "Cascade", grams: 25, alpha: 5.5, minutes: 60, use: "fervura" as const, price: 0 };
     const defaultYeast = { id: uid(), name: "SafAle US-05", attenuation: 81, packs: 1, price: 0 };
@@ -482,9 +502,9 @@ export default function AiAssistant() {
     const equipment = {
       ...(defaultEquipment),
       ...((payload.equipment ?? {}) as Partial<Recipe["equipment"]>),
-      batchL: Number((payload.equipment as any)?.batchL ?? payload.batchSize ?? defaultEquipment.batchL) || defaultEquipment.batchL,
-      boilMinutes: Number((payload.equipment as any)?.boilMinutes ?? payload.boilTime ?? defaultEquipment.boilMinutes) || defaultEquipment.boilMinutes,
-      efficiency: Number((payload.equipment as any)?.efficiency ?? payload.efficiency ?? defaultEquipment.efficiency) || defaultEquipment.efficiency,
+      batchL: Number(equipmentSource.batchL ?? payload.batchSize ?? defaultEquipment.batchL) || defaultEquipment.batchL,
+      boilMinutes: Number(equipmentSource.boilMinutes ?? payload.boilTime ?? defaultEquipment.boilMinutes) || defaultEquipment.boilMinutes,
+      efficiency: Number(equipmentSource.efficiency ?? payload.efficiency ?? defaultEquipment.efficiency) || defaultEquipment.efficiency,
     };
 
     const normalizeUse = (value: unknown) => {
@@ -496,38 +516,38 @@ export default function AiAssistant() {
     };
 
     const fermentables = Array.isArray(payload.fermentables) && payload.fermentables.length > 0
-      ? payload.fermentables.map((item: any, index: number) => ({
-          id: String(item?.id ?? `${uid()}-${index}`),
-          name: String(item?.name ?? defaultFermentable.name),
-          kg: Number(item?.kg ?? item?.amount ?? 0),
-          potential: Number(item?.potential ?? item?.yield ?? 80) > 0
-            ? (Number(item?.potential ?? item?.yield ?? 80) < 2 ? Number(item?.potential ?? item?.yield) : 1 + (((Number(item?.potential ?? item?.yield ?? 80) / 100) * 0.046)))
+      ? payload.fermentables.map((item: Record<string, unknown>, index: number) => ({
+          id: String(item.id ?? `${uid()}-${index}`),
+          name: String(item.name ?? defaultFermentable.name),
+          kg: Number(item.kg ?? item.amount ?? 0),
+          potential: Number(item.potential ?? item.yield ?? 80) > 0
+            ? (Number(item.potential ?? item.yield ?? 80) < 2 ? Number(item.potential ?? item.yield) : 1 + (((Number(item.potential ?? item.yield ?? 80) / 100) * 0.046)))
             : defaultFermentable.potential,
-          color: Number(item?.color ?? 0),
-          type: String(item?.type ?? "grao"),
-          price: Number(item?.price ?? 0),
+          color: Number(item.color ?? 0),
+          type: String(item.type ?? "grao"),
+          price: Number(item.price ?? 0),
         }))
       : [defaultFermentable];
 
     const hops = Array.isArray(payload.hops) && payload.hops.length > 0
-      ? payload.hops.map((item: any, index: number) => ({
-          id: String(item?.id ?? `${uid()}-${index}`),
-          name: String(item?.name ?? defaultHop.name),
-          grams: Number(item?.grams ?? item?.amount ?? 0),
-          alpha: Number(item?.alpha ?? 5),
-          minutes: Number(item?.minutes ?? item?.time ?? 60),
-          use: normalizeUse(item?.use),
-          price: Number(item?.price ?? 0),
+      ? payload.hops.map((item: Record<string, unknown>, index: number) => ({
+          id: String(item.id ?? `${uid()}-${index}`),
+          name: String(item.name ?? defaultHop.name),
+          grams: Number(item.grams ?? item.amount ?? 0),
+          alpha: Number(item.alpha ?? 5),
+          minutes: Number(item.minutes ?? item.time ?? 60),
+          use: normalizeUse(item.use),
+          price: Number(item.price ?? 0),
         }))
       : [defaultHop];
 
     const yeasts = Array.isArray(payload.yeasts) && payload.yeasts.length > 0
-      ? payload.yeasts.map((item: any, index: number) => ({
-          id: String(item?.id ?? `${uid()}-${index}`),
-          name: String(item?.name ?? defaultYeast.name),
-          attenuation: Number(item?.attenuation ?? 75),
-          packs: Number(item?.packs ?? 1),
-          price: Number(item?.price ?? 0),
+      ? payload.yeasts.map((item: Record<string, unknown>, index: number) => ({
+          id: String(item.id ?? `${uid()}-${index}`),
+          name: String(item.name ?? defaultYeast.name),
+          attenuation: Number(item.attenuation ?? 75),
+          packs: Number(item.packs ?? 1),
+          price: Number(item.price ?? 0),
         }))
       : [defaultYeast];
 
@@ -538,23 +558,23 @@ export default function AiAssistant() {
       author: String(payload.author ?? "IA Assistant"),
       notes: String(payload.notes ?? `Receita gerada automaticamente pela IA em ${new Date().toLocaleString("pt-BR")}`),
       equipment,
-      mashSteps: Array.isArray(payload.mashSteps) ? payload.mashSteps.map((step: any, index: number) => ({
-        name: String(step?.name ?? `Etapa ${index + 1}`),
-        tempC: Number(step?.tempC ?? 66),
-        minutes: Number(step?.minutes ?? 60),
+      mashSteps: Array.isArray(payload.mashSteps) ? payload.mashSteps.map((step: Record<string, unknown>, index: number) => ({
+        name: String(step.name ?? `Etapa ${index + 1}`),
+        tempC: Number(step.tempC ?? 66),
+        minutes: Number(step.minutes ?? 60),
       })) : [{ name: "Sacarificação", tempC: 66, minutes: 60 }],
       fermentationTempC: Number(payload.fermentationTempC ?? 19),
       fermentationDays: Number(payload.fermentationDays ?? 14),
       fermentables,
       hops,
       yeasts,
-      miscs: Array.isArray(payload.miscs) ? payload.miscs.map((item: any, index: number) => ({
-        id: String(item?.id ?? `${uid()}-${index}`),
-        name: String(item?.name ?? "Adjunto"),
-        amount: Number(item?.amount ?? 0),
-        unit: String(item?.unit ?? "un"),
-        use: String(item?.use ?? "Fervura"),
-        price: Number(item?.price ?? 0),
+      miscs: Array.isArray(payload.miscs) ? payload.miscs.map((item: Record<string, unknown>, index: number) => ({
+        id: String(item.id ?? `${uid()}-${index}`),
+        name: String(item.name ?? "Adjunto"),
+        amount: Number(item.amount ?? 0),
+        unit: String(item.unit ?? "un"),
+        use: String(item.use ?? "Fervura"),
+        price: Number(item.price ?? 0),
       })) : [],
       createdAt: String(payload.createdAt ?? new Date().toISOString()),
       updatedAt: new Date().toISOString(),
@@ -712,7 +732,7 @@ export default function AiAssistant() {
             <span className="font-medium text-slate-300">Modelo</span>
             <select
               value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
+              onChange={(e) => setSelectedModel(e.target.value.trim())}
               className="min-w-[220px] rounded-md border border-slate-600/80 bg-[#0f172a] px-2 py-1.5 text-xs text-slate-100 outline-none ring-0 transition focus:border-primary focus:ring-2 focus:ring-primary/30"
               aria-label="Selecionar modelo de IA"
             >

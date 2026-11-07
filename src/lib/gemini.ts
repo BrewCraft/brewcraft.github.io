@@ -80,8 +80,9 @@ export class GeminiService {
   }
 
   private getModel(name: string) {
+    const cleanModelName = name.trim();
     return this.genAI.getGenerativeModel({
-      model: name,
+      model: cleanModelName || "gemini-2.0-flash-exp",
       systemInstruction: SYSTEM_PROMPT,
       tools: [
         {
@@ -91,7 +92,7 @@ export class GeminiService {
     });
   }
 
-  async chat(messages: Message[], context?: any, signal?: AbortSignal) {
+  async chat(messages: Message[], context?: unknown, signal?: AbortSignal) {
     const modelsToTry = [this.modelName, ...FALLBACK_MODELS.filter(m => m !== this.modelName)];
 
     for (const modelName of modelsToTry) {
@@ -105,7 +106,7 @@ export class GeminiService {
         const lastMessage = messages[messages.length - 1] ?? { role: "user", content: "Olá" };
         const chatSession = model.startChat({ history });
 
-        let promptParts: any[] = [{ text: lastMessage.content || "Olá" }];
+        const promptParts: Array<{ text: string; inlineData?: { data: string; mimeType: string } }> = [{ text: lastMessage.content || "Olá" }];
 
         if (context) {
           promptParts[0].text += `\n\nContexto do BrewCraft: ${JSON.stringify(context)}`;
@@ -116,10 +117,8 @@ export class GeminiService {
           const mimeMatch = lastMessage.image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
           const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
 
-          promptParts = [
-            { text: lastMessage.content || "Analise esta imagem:" },
-            { inlineData: { data: imageData, mimeType } },
-          ];
+          promptParts[0] = { text: lastMessage.content || "Analise esta imagem:" };
+          promptParts.push({ inlineData: { data: imageData, mimeType } });
 
           const result = await model.generateContent(promptParts, { signal });
           const text = await result.response.text();
@@ -129,8 +128,11 @@ export class GeminiService {
         const result = await chatSession.sendMessage(promptParts, { signal });
         const text = await result.response.text();
         return text?.trim() || "";
-      } catch (error: any) {
-        const isQuotaError = error?.message?.includes("429") || error?.status === 429;
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : "Falha na comunicação com o Gemini";
+        const errorName = error instanceof Error ? error.name : "Error";
+        const status = typeof error === "object" && error !== null && "status" in error ? Number((error as { status?: number }).status) : undefined;
+        const isQuotaError = errorMessage.includes("429") || status === 429;
         const isLastModel = modelName === modelsToTry[modelsToTry.length - 1];
 
         if (isQuotaError && !isLastModel) {
@@ -138,20 +140,20 @@ export class GeminiService {
           continue;
         }
 
-        if (error?.name === "AbortError" || error?.message?.includes("aborted")) {
+        if (errorName === "AbortError" || errorMessage.includes("aborted")) {
           return "";
         }
 
         console.error(`Gemini API Error (${modelName}):`, error);
         if (isLastModel) {
-          throw new Error(typeof error?.message === "string" ? error.message : "Falha na comunicação com o Gemini");
+          throw new Error(errorMessage);
         }
       }
     }
     return "";
   }
 
-  async chatStream(messages: Message[], context?: any, signal?: AbortSignal) {
+  async chatStream(messages: Message[], context?: unknown, signal?: AbortSignal) {
     const modelsToTry = [this.modelName, ...FALLBACK_MODELS.filter(m => m !== this.modelName)];
 
     for (const modelName of modelsToTry) {
@@ -165,7 +167,7 @@ export class GeminiService {
         const lastMessage = messages[messages.length - 1] ?? { role: "user", content: "Olá" };
         const chatSession = model.startChat({ history });
 
-        let promptParts: any[] = [{ text: lastMessage.content || "Olá" }];
+        const promptParts: Array<{ text: string; inlineData?: { data: string; mimeType: string } }> = [{ text: lastMessage.content || "Olá" }];
 
         if (context) {
           promptParts[0].text += `\n\nContexto do BrewCraft: ${JSON.stringify(context)}`;
@@ -176,17 +178,18 @@ export class GeminiService {
           const mimeMatch = lastMessage.image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
           const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
 
-          promptParts = [
-            { text: lastMessage.content || "Analise esta imagem:" },
-            { inlineData: { data: imageData, mimeType } },
-          ];
+          promptParts[0] = { text: lastMessage.content || "Analise esta imagem:" };
+          promptParts.push({ inlineData: { data: imageData, mimeType } });
 
           return await model.generateContentStream(promptParts, { signal });
         }
 
         return await chatSession.sendMessageStream(promptParts, { signal });
-      } catch (error: any) {
-        const isQuotaError = error?.message?.includes("429") || error?.status === 429;
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : "Falha na comunicação com o Gemini";
+        const errorName = error instanceof Error ? error.name : "Error";
+        const status = typeof error === "object" && error !== null && "status" in error ? Number((error as { status?: number }).status) : undefined;
+        const isQuotaError = errorMessage.includes("429") || status === 429;
         const isLastModel = modelName === modelsToTry[modelsToTry.length - 1];
 
         if (isQuotaError && !isLastModel) {
@@ -194,7 +197,7 @@ export class GeminiService {
           continue;
         }
 
-        if (error?.name === "AbortError" || error?.message?.includes("aborted")) {
+        if (errorName === "AbortError" || errorMessage.includes("aborted")) {
           throw error;
         }
 
