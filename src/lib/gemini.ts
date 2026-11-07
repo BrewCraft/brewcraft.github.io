@@ -1,23 +1,56 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI, type Content, type GenerateContentConfig, type Part } from "@google/genai";
 import { type Recipe } from "./recipe-calc";
 
-export const ALLOWED_GEMINI_MODELS = [
-  "gemini-2.0-flash-exp",
-  "gemini-1.5-flash",
-  "gemini-1.5-flash-8b",
+export const DEFAULT_GEMINI_3_MODEL = "gemini-3.8-flash";
+
+export const GEMINI_3_FALLBACK_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.7-flash",
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+  "gemini-3.1-pro-preview",
+  "gemini-3-flash-preview",
 ] as const;
 
-const FALLBACK_MODELS = [
-  "gemini-2.0-flash-exp",
-  "gemini-1.5-flash",
-  "gemini-1.5-flash-8b",
-];
+export const isGemini3TextModel = (modelName?: string | null) => {
+  const normalized = (modelName ?? "").trim();
+  if (!normalized) return false;
+  if (!normalized.toLowerCase().startsWith("gemini-3")) return false;
+  if (/gemini-4/i.test(normalized)) return false;
+  if (/(image|audio|video|tts|transcribe|embedding|voice|music)/i.test(normalized)) return false;
+  return true;
+};
 
 export const resolveGeminiModelName = (modelName?: string | null) => {
   const normalized = (modelName ?? "").trim();
-  return ALLOWED_GEMINI_MODELS.includes(normalized as typeof ALLOWED_GEMINI_MODELS[number])
-  ? normalized
-  : "gemini-2.0-flash-exp";
+  return isGemini3TextModel(normalized) ? normalized : DEFAULT_GEMINI_3_MODEL;
+};
+
+export const filterGemini3TextModels = (modelCatalog: Array<Record<string, unknown>> = []) => {
+  const normalized = modelCatalog
+    .map((model) => {
+      const rawName = String(model.name ?? "").trim();
+      const displayName = String(model.displayName ?? "").trim();
+      const name = rawName.split("/").pop() || rawName || displayName;
+      const supportedGenerationMethods = Array.isArray(model.supportedGenerationMethods)
+        ? model.supportedGenerationMethods.map((value) => String(value))
+        : [];
+      const supportedActions = Array.isArray(model.supportedActions)
+        ? model.supportedActions.map((value) => String(value))
+        : [];
+
+      if (!isGemini3TextModel(name)) return null;
+      const relevanceSignals = [...supportedGenerationMethods, ...supportedActions];
+      const canGenerateText = relevanceSignals.some((value) => /generatecontent|generatemessage/i.test(value));
+      const hasDisallowedFeature = /(image|audio|video|tts|transcribe|embedding|voice|music)/i.test(name);
+      if (!canGenerateText && hasDisallowedFeature) return null;
+      return canGenerateText || /^gemini-3/i.test(name) ? name : null;
+    })
+    .filter((value): value is string => Boolean(value));
+
+  return [...new Set(normalized)].sort((a, b) => a.localeCompare(b));
 };
 
 // Types
@@ -69,70 +102,83 @@ Diretrizes:
 `;
 
 export class GeminiService {
-  private genAI: GoogleGenerativeAI;
+  private ai: GoogleGenAI;
   private apiKey: string;
   private modelName: string;
 
-  constructor(apiKey: string, modelName: string = "gemini-2.0-flash-exp") {
+  constructor(apiKey: string, modelName: string = DEFAULT_GEMINI_3_MODEL) {
     this.apiKey = apiKey;
     this.modelName = resolveGeminiModelName(modelName);
-    this.genAI = new GoogleGenerativeAI(apiKey);
+    this.ai = new GoogleGenAI({ apiKey });
   }
 
-  private getModel(name: string) {
-    const cleanModelName = name.trim();
-    return this.genAI.getGenerativeModel({
-      model: cleanModelName || "gemini-2.0-flash-exp",
+  private getRequestConfig(signal?: AbortSignal): GenerateContentConfig {
+    return {
+      abortSignal: signal,
       systemInstruction: SYSTEM_PROMPT,
       tools: [
         {
           googleSearch: {},
         },
       ],
+    };
+  }
+
+  private buildContents(messages: Message[], context?: unknown): Content[] {
+    return messages.map((message, index) => {
+      const role = message.role === "system" ? "user" : message.role === "model" ? "model" : "user";
+      const parts: Part[] = [];
+      const isLastMessage = index === messages.length - 1;
+
+      let text = message.content ?? "";
+      if (isLastMessage && context !== undefined && context !== null && message.role === "user") {
+        text += `\n\nContexto do BrewCraft: ${JSON.stringify(context)}`;
+      }
+
+      if (text) {
+        parts.push({ text });
+      }
+
+      if (message.image) {
+        const imageData = message.image.includes(",") ? message.image.split(",")[1] : message.image;
+        const mimeMatch = message.image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
+        const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+        parts.push({
+          inlineData: {
+            mimeType,
+            data: imageData,
+          },
+        });
+      }
+
+      return {
+        role,
+        parts,
+      };
     });
   }
 
   async chat(messages: Message[], context?: unknown, signal?: AbortSignal) {
-    const modelsToTry = [this.modelName, ...FALLBACK_MODELS.filter(m => m !== this.modelName)];
+    const modelsToTry = [this.modelName, ...GEMINI_3_FALLBACK_MODELS.filter((model) => model !== this.modelName)];
 
     for (const modelName of modelsToTry) {
       try {
-        const model = this.getModel(modelName);
-        const history = messages.slice(0, -1).map(m => ({
-          role: m.role === "system" ? "user" : m.role,
-          parts: [{ text: m.content || "" }],
-        }));
-
-        const lastMessage = messages[messages.length - 1] ?? { role: "user", content: "Olá" };
-        const chatSession = model.startChat({ history });
-
-        const promptParts: Array<{ text: string; inlineData?: { data: string; mimeType: string } }> = [{ text: lastMessage.content || "Olá" }];
-
-        if (context) {
-          promptParts[0].text += `\n\nContexto do BrewCraft: ${JSON.stringify(context)}`;
-        }
-
-        if (lastMessage.image) {
-          const imageData = lastMessage.image.split(",")[1];
-          const mimeMatch = lastMessage.image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
-          const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
-
-          promptParts[0] = { text: lastMessage.content || "Analise esta imagem:" };
-          promptParts.push({ inlineData: { data: imageData, mimeType } });
-
-          const result = await model.generateContent(promptParts, { signal });
-          const text = await result.response.text();
-          return text?.trim() || "";
-        }
-
-        const result = await chatSession.sendMessage(promptParts, { signal });
-        const text = await result.response.text();
-        return text?.trim() || "";
+        const response = await this.ai.models.generateContent({
+          model: modelName,
+          contents: this.buildContents(messages, context),
+          config: this.getRequestConfig(signal),
+        });
+        return response.text?.trim() || "";
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : "Falha na comunicação com o Gemini";
         const errorName = error instanceof Error ? error.name : "Error";
-        const status = typeof error === "object" && error !== null && "status" in error ? Number((error as { status?: number }).status) : undefined;
-        const isQuotaError = errorMessage.includes("429") || status === 429;
+        const status = typeof error === "object" && error !== null && "status" in error
+          ? Number((error as { status?: number }).status)
+          : undefined;
+        const statusCode = typeof error === "object" && error !== null && "statusCode" in error
+          ? Number((error as { statusCode?: number }).statusCode)
+          : undefined;
+        const isQuotaError = errorMessage.includes("429") || status === 429 || statusCode === 429;
         const isLastModel = modelName === modelsToTry[modelsToTry.length - 1];
 
         if (isQuotaError && !isLastModel) {
@@ -142,6 +188,10 @@ export class GeminiService {
 
         if (errorName === "AbortError" || errorMessage.includes("aborted")) {
           return "";
+        }
+
+        if (status === 401 || statusCode === 401 || /api key|invalid.*key|unauthorized/i.test(errorMessage)) {
+          throw new Error("Chave da API Gemini inválida ou sem autorização para este modelo.");
         }
 
         console.error(`Gemini API Error (${modelName}):`, error);
@@ -154,42 +204,27 @@ export class GeminiService {
   }
 
   async chatStream(messages: Message[], context?: unknown, signal?: AbortSignal) {
-    const modelsToTry = [this.modelName, ...FALLBACK_MODELS.filter(m => m !== this.modelName)];
+    const modelsToTry = [this.modelName, ...GEMINI_3_FALLBACK_MODELS.filter((model) => model !== this.modelName)];
 
     for (const modelName of modelsToTry) {
       try {
-        const model = this.getModel(modelName);
-        const history = messages.slice(0, -1).map(m => ({
-          role: m.role === "system" ? "user" : m.role,
-          parts: [{ text: m.content || "" }],
-        }));
+        const responseStream = await this.ai.models.generateContentStream({
+          model: modelName,
+          contents: this.buildContents(messages, context),
+          config: this.getRequestConfig(signal),
+        });
 
-        const lastMessage = messages[messages.length - 1] ?? { role: "user", content: "Olá" };
-        const chatSession = model.startChat({ history });
-
-        const promptParts: Array<{ text: string; inlineData?: { data: string; mimeType: string } }> = [{ text: lastMessage.content || "Olá" }];
-
-        if (context) {
-          promptParts[0].text += `\n\nContexto do BrewCraft: ${JSON.stringify(context)}`;
-        }
-
-        if (lastMessage.image) {
-          const imageData = lastMessage.image.split(",")[1];
-          const mimeMatch = lastMessage.image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
-          const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
-
-          promptParts[0] = { text: lastMessage.content || "Analise esta imagem:" };
-          promptParts.push({ inlineData: { data: imageData, mimeType } });
-
-          return await model.generateContentStream(promptParts, { signal });
-        }
-
-        return await chatSession.sendMessageStream(promptParts, { signal });
+        return { stream: responseStream };
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : "Falha na comunicação com o Gemini";
         const errorName = error instanceof Error ? error.name : "Error";
-        const status = typeof error === "object" && error !== null && "status" in error ? Number((error as { status?: number }).status) : undefined;
-        const isQuotaError = errorMessage.includes("429") || status === 429;
+        const status = typeof error === "object" && error !== null && "status" in error
+          ? Number((error as { status?: number }).status)
+          : undefined;
+        const statusCode = typeof error === "object" && error !== null && "statusCode" in error
+          ? Number((error as { statusCode?: number }).statusCode)
+          : undefined;
+        const isQuotaError = errorMessage.includes("429") || status === 429 || statusCode === 429;
         const isLastModel = modelName === modelsToTry[modelsToTry.length - 1];
 
         if (isQuotaError && !isLastModel) {
@@ -201,10 +236,15 @@ export class GeminiService {
           throw error;
         }
 
+        if (status === 401 || statusCode === 401 || /api key|invalid.*key|unauthorized/i.test(errorMessage)) {
+          throw new Error("Chave da API Gemini inválida ou sem autorização para este modelo.");
+        }
+
         if (isLastModel) throw error;
       }
     }
-    throw new Error("Todos os modelos falharam");
+
+    throw new Error("Todos os modelos Gemini 3 disponíveis falharam");
   }
 
   // Extract JSON recipe from text response

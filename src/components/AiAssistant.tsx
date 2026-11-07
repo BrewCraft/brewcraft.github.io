@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { GeminiService, type Message } from "@/lib/gemini";
+import { DEFAULT_GEMINI_3_MODEL, filterGemini3TextModels, GEMINI_3_FALLBACK_MODELS, GeminiService, isGemini3TextModel, type Message } from "@/lib/gemini";
 import {
   AI_SYNC_ENABLED_STORAGE_KEY,
   getSizeMB,
@@ -116,15 +116,11 @@ export default function AiAssistant() {
   const [isRecording, setIsRecording] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [retryMessage, setRetryMessage] = useState<{ text: string; image?: string } | null>(null);
+  const [availableModels, setAvailableModels] = useState<string[]>(GEMINI_3_FALLBACK_MODELS as unknown as string[]);
   const [selectedModel, setSelectedModel] = useState(() => {
-    if (typeof window === "undefined") return "gemini-2.0-flash-exp";
+    if (typeof window === "undefined") return DEFAULT_GEMINI_3_MODEL;
     const savedModel = localStorage.getItem("brewcraft-ai-model")?.trim();
-    const allowedModels = [
-      "gemini-2.0-flash-exp",
-      "gemini-1.5-flash",
-      "gemini-1.5-flash-8b",
-    ];
-    return allowedModels.includes(savedModel ?? "") ? savedModel! : "gemini-2.0-flash-exp";
+    return isGemini3TextModel(savedModel) ? savedModel! : DEFAULT_GEMINI_3_MODEL;
   });
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -158,15 +154,37 @@ export default function AiAssistant() {
   }, [cloudSyncEnabled]);
 
   useEffect(() => {
-    if (!apiKey || typeof window === "undefined") return;
+    if (!apiKey || typeof window === "undefined") {
+      setAvailableModels([]);
+      setSelectedModel((prev) => isGemini3TextModel(prev) ? prev : DEFAULT_GEMINI_3_MODEL);
+      return;
+    }
 
     const fetchAvailableModels = async () => {
       try {
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
         const payload = await response.json();
-        console.log("Modelos Gemini disponíveis para esta API Key:", payload);
+        const models = Array.isArray(payload.models)
+          ? filterGemini3TextModels(payload.models as Array<Record<string, unknown>>)
+          : [];
+
+        console.log("Modelos Gemini 3 disponíveis para esta API Key:", payload);
+
+        setAvailableModels(models.length > 0 ? models : GEMINI_3_FALLBACK_MODELS as unknown as string[]);
+
+        setSelectedModel((prev) => {
+          const validCurrent = isGemini3TextModel(prev) && models.includes(prev) ? prev : (models[0] ?? DEFAULT_GEMINI_3_MODEL);
+          localStorage.setItem("brewcraft-ai-model", validCurrent);
+          return validCurrent;
+        });
       } catch (error) {
         console.error("Erro ao listar modelos Gemini:", error);
+        setAvailableModels(GEMINI_3_FALLBACK_MODELS as unknown as string[]);
+        setSelectedModel((prev) => (isGemini3TextModel(prev) ? prev : DEFAULT_GEMINI_3_MODEL));
       }
     };
 
@@ -732,13 +750,20 @@ export default function AiAssistant() {
             <span className="font-medium text-slate-300">Modelo</span>
             <select
               value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value.trim())}
+              onChange={(e) => {
+                const nextModel = e.target.value.trim();
+                if (isGemini3TextModel(nextModel)) {
+                  setSelectedModel(nextModel);
+                }
+              }}
               className="min-w-[220px] rounded-md border border-slate-600/80 bg-[#0f172a] px-2 py-1.5 text-xs text-slate-100 outline-none ring-0 transition focus:border-primary focus:ring-2 focus:ring-primary/30"
               aria-label="Selecionar modelo de IA"
             >
-              <option value="gemini-2.0-flash-exp" className="bg-[#0f172a] text-slate-100">Gemini 2.0 Flash - Padrão</option>
-              <option value="gemini-1.5-flash" className="bg-[#0f172a] text-slate-100">Gemini 1.5 Flash - Estável</option>
-              <option value="gemini-1.5-flash-8b" className="bg-[#0f172a] text-slate-100">Gemini 1.5 Flash-8B - Rápido</option>
+              {(availableModels.length > 0 ? availableModels : [DEFAULT_GEMINI_3_MODEL]).map((model) => (
+                <option key={model} value={model} className="bg-[#0f172a] text-slate-100">
+                  {model}
+                </option>
+              ))}
             </select>
           </label>
         </div>
