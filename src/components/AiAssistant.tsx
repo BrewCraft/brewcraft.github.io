@@ -30,7 +30,7 @@ import { saveSettings } from "@/lib/settings";
 import geminiLogo from "../../gemini-svg.svg";
 
 type AiAction = {
-  action: "ADD_INVENTORY" | "CREATE_RECIPE" | "UPDATE_SETTING";
+  action: "ADD_INVENTORY" | "CREATE_RECIPE" | "UPDATE_RECIPE" | "UPDATE_SETTING";
   payload: Record<string, unknown>;
   message: string;
 };
@@ -651,6 +651,41 @@ export default function AiAssistant() {
           const newRecipe = normalizeAiRecipe(recipeData);
 
           setRecipes((currentRecipes) => [...currentRecipes, newRecipe]);
+          return true;
+        }
+        case "UPDATE_RECIPE": {
+          const payload = action.payload as Partial<Recipe> & Record<string, unknown>;
+
+          if (!payload.id) {
+            throw new Error("Payload de atualização de receita inválido: id ausente.");
+          }
+
+          const currentRecipes = recipes;
+          const previousRecipe = currentRecipes.find((recipe) => recipe.id === payload.id);
+
+          if (!previousRecipe) {
+            throw new Error("Receita para atualização não encontrada.");
+          }
+
+          const mergedRecipe = {
+            ...previousRecipe,
+            ...payload,
+            id: payload.id,
+            updatedAt: new Date().toISOString(),
+          } as Recipe;
+
+          const computedStats = recipeStats(mergedRecipe);
+          const receitaAtualizadaCalculada = {
+            ...mergedRecipe,
+            og: computedStats.og,
+            fg: computedStats.fg,
+            abv: computedStats.abv,
+            ibu: computedStats.ibu,
+            srm: computedStats.srm,
+          } as Recipe;
+
+          const updatedRecipes = currentRecipes.map((recipe) => recipe.id === payload.id ? receitaAtualizadaCalculada : recipe);
+          setRecipes(updatedRecipes);
           return true;
         }
         case "UPDATE_SETTING": {
