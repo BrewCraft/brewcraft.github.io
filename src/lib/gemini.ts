@@ -72,6 +72,11 @@ export class GeminiService {
     this.model = this.genAI.getGenerativeModel({
       model: resolvedModelName,
       systemInstruction: SYSTEM_PROMPT,
+      tools: [
+        {
+          googleSearch: {},
+        },
+      ],
     });
   }
 
