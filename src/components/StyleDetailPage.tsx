@@ -80,11 +80,11 @@ export default function StyleDetailPage() {
             ["IBU", style.ibu, ""],
             ["EBC", ebcRange, ""],
             ["SRM", style.srm, ""],
-          ] as Array<[string, [number, number], string]>).map(([label, range, suffix]) => (
+          ] as [string, [number, number], string][]).map(([label, range, suffix]) => (
             <div key={label} className="rounded-lg border border-border bg-background p-4">
               <div className="text-xs uppercase tracking-[0.15em] text-muted-foreground">{label}</div>
               <div className="mt-2 text-lg font-bold text-foreground">
-                {fmtRange(range as [number, number], label === "OG" || label === "FG" || label === "ABV" ? 3 : 0)}
+                {fmtRange(range, label === "OG" || label === "FG" || label === "ABV" ? 3 : 0)}
                 {suffix}
               </div>
             </div>
