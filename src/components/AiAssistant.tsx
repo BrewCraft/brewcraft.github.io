@@ -7,37 +7,15 @@ import {
   Trash2, 
   Image as ImageIcon, 
   AlertCircle,
-  Mic,
-  Key,
-  ExternalLink,
-  CheckCircle2
+  Mic
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  DEFAULT_GEMINI_MODEL,
-  GEMINI_FALLBACK_MODELS,
-  GeminiService,
-  isSupportedGeminiModel,
-  filterSupportedGeminiModels,
-  cleanApiKey,
-  getStoredApiKey,
-  setStoredApiKey,
-  GEMINI_API_KEY_STORAGE_KEY,
-  type Message 
-} from "@/lib/gemini";
+import { GeminiService, type Message } from "@/lib/gemini";
 import {
   AI_SYNC_ENABLED_STORAGE_KEY,
   getSizeMB,
@@ -47,7 +25,7 @@ import {
   type ChatSession,
 } from "@/lib/cloud-sync";
 import { useInventory, useRecipes, uid } from "@/lib/store";
-import { type Recipe, defaultEquipment, recipeStats, type InventoryItem } from "@/lib/recipe-calc";
+import { type Recipe, defaultEquipment, recipeStats, type InventoryItem, type HopUse } from "@/lib/recipe-calc";
 import { saveSettings } from "@/lib/settings";
 import geminiLogo from "../../gemini-svg.svg";
 
@@ -138,12 +116,6 @@ export default function AiAssistant() {
   const [isRecording, setIsRecording] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [retryMessage, setRetryMessage] = useState<{ text: string; image?: string } | null>(null);
-  const [availableModels, setAvailableModels] = useState<string[]>(GEMINI_FALLBACK_MODELS as unknown as string[]);
-  const [selectedModel, setSelectedModel] = useState(() => {
-    if (typeof window === "undefined") return DEFAULT_GEMINI_MODEL;
-    const savedModel = localStorage.getItem("brewcraft-ai-model")?.trim();
-    return isSupportedGeminiModel(savedModel) ? savedModel! : DEFAULT_GEMINI_MODEL;
-  });
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -153,14 +125,7 @@ export default function AiAssistant() {
   const [recipes, setRecipes] = useRecipes();
   const [inventory, setInventory] = useInventory();
 
-  const [apiKey, setApiKey] = useState(() => getStoredApiKey());
-  const [isKeyDialogOpen, setIsKeyDialogOpen] = useState(false);
-  const [keyInput, setKeyInput] = useState("");
-  const [keyStatus, setKeyStatus] = useState<"idle" | "testing" | "valid" | "invalid">("idle");
-  const [keyStatusMsg, setKeyStatusMsg] = useState<string | null>(null);
-  const [apiAuthError, setApiAuthError] = useState<string | null>(null);
-
-  const hasCustomKey = typeof window !== "undefined" && Boolean(cleanApiKey(localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY)));
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
   const totalHistorySizeMB = history.reduce((total, chat) => total + Number(getSizeMB(chat)), 0);
 
   const scrollToBottom = () => {
@@ -175,77 +140,8 @@ export default function AiAssistant() {
   }, [messages, isLoading]);
 
   useEffect(() => {
-    localStorage.setItem("brewcraft-ai-model", selectedModel);
-  }, [selectedModel]);
-
-  useEffect(() => {
     localStorage.setItem(AI_SYNC_ENABLED_STORAGE_KEY, String(cloudSyncEnabled));
   }, [cloudSyncEnabled]);
-
-  useEffect(() => {
-    const handleKeyChange = () => {
-      setApiKey(getStoredApiKey());
-      setApiAuthError(null);
-    };
-    window.addEventListener("brewcraft-apikey-changed", handleKeyChange);
-    window.addEventListener("storage", handleKeyChange);
-    return () => {
-      window.removeEventListener("brewcraft-apikey-changed", handleKeyChange);
-      window.removeEventListener("storage", handleKeyChange);
-    };
-  }, []);
-
-  useEffect(() => {
-    const key = cleanApiKey(apiKey);
-    if (!key || typeof window === "undefined") {
-      setAvailableModels(GEMINI_FALLBACK_MODELS as unknown as string[]);
-      setSelectedModel((prev) => isSupportedGeminiModel(prev) ? prev : DEFAULT_GEMINI_MODEL);
-      return;
-    }
-
-    let isMounted = true;
-    const fetchAvailableModels = async () => {
-      try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`);
-        if (!response.ok) {
-          if (response.status === 401 && isMounted) {
-            setApiAuthError("A chave da API Gemini é inválida ou não possui autorização (HTTP 401).");
-          }
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        if (isMounted) setApiAuthError(null);
-        const payload = await response.json();
-        const models = Array.isArray(payload.models)
-          ? filterSupportedGeminiModels(payload.models as Array<Record<string, unknown>>)
-          : [];
-
-        console.log("Modelos Gemini disponíveis para esta API Key:", models);
-
-        if (isMounted) {
-          const list = models.length > 0 ? models : (GEMINI_FALLBACK_MODELS as unknown as string[]);
-          setAvailableModels(list);
-
-          setSelectedModel((prev) => {
-            const validCurrent = isSupportedGeminiModel(prev) && list.includes(prev) ? prev : (list[0] ?? DEFAULT_GEMINI_MODEL);
-            localStorage.setItem("brewcraft-ai-model", validCurrent);
-            return validCurrent;
-          });
-        }
-      } catch (error) {
-        console.error("Erro ao listar modelos Gemini:", error);
-        if (isMounted) {
-          setAvailableModels(GEMINI_FALLBACK_MODELS as unknown as string[]);
-          setSelectedModel((prev) => (isSupportedGeminiModel(prev) ? prev : DEFAULT_GEMINI_MODEL));
-        }
-      }
-    };
-
-    void fetchAvailableModels();
-    return () => {
-      isMounted = false;
-    };
-  }, [apiKey]);
 
   useEffect(() => {
     const savedChats = readStoredAiChats();
@@ -377,65 +273,6 @@ export default function AiAssistant() {
     });
   };
 
-  const openKeyDialog = () => {
-    const stored = typeof window !== "undefined" ? localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY) || "" : "";
-    setKeyInput(cleanApiKey(stored));
-    setKeyStatus("idle");
-    setKeyStatusMsg(null);
-    setIsKeyDialogOpen(true);
-  };
-
-  const handleTestKey = async () => {
-    const candidate = cleanApiKey(keyInput);
-    if (!candidate) {
-      setKeyStatus("invalid");
-      setKeyStatusMsg("Por favor, informe uma chave para testar.");
-      return;
-    }
-    setKeyStatus("testing");
-    setKeyStatusMsg(null);
-    try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(candidate)}`);
-      if (!res.ok) {
-        if (res.status === 401) {
-          throw new Error("Chave não autorizada (401). Verifique se a chave do Google AI Studio está correta.");
-        }
-        throw new Error(`Erro na API (${res.status})`);
-      }
-      setKeyStatus("valid");
-      setKeyStatusMsg("Chave válida! Conexão com a API do Gemini confirmada.");
-    } catch (err: unknown) {
-      setKeyStatus("invalid");
-      setKeyStatusMsg(err instanceof Error ? err.message : "Falha ao testar chave");
-    }
-  };
-
-  const handleSaveKey = () => {
-    const candidate = cleanApiKey(keyInput);
-    setStoredApiKey(candidate);
-    setApiKey(getStoredApiKey());
-    setApiAuthError(null);
-    setIsKeyDialogOpen(false);
-    toast({
-      title: "Chave da API salva",
-      description: candidate ? "Chave personalizada configurada com sucesso." : "Usando chave padrão do ambiente.",
-    });
-  };
-
-  const handleRemoveCustomKey = () => {
-    setStoredApiKey("");
-    setApiKey(getStoredApiKey());
-    setKeyInput("");
-    setKeyStatus("idle");
-    setKeyStatusMsg(null);
-    setApiAuthError(null);
-    setIsKeyDialogOpen(false);
-    toast({
-      title: "Chave personalizada removida",
-      description: "Voltando a usar a chave padrão do ambiente (se disponível).",
-    });
-  };
-
   const retryLastRequest = () => {
     if (!retryMessage) return;
     setInput(retryMessage.text);
@@ -455,15 +292,12 @@ export default function AiAssistant() {
     }
 
     if (!input.trim() && !selectedImage) return;
-
-    const activeKey = cleanApiKey(apiKey);
-    if (!activeKey) {
+    if (!apiKey) {
       toast({
         title: "API Key não configurada",
-        description: "Configure sua chave da API Gemini para usar o assistente.",
+        description: "Configure VITE_GEMINI_API_KEY no seu arquivo .env",
         variant: "destructive",
       });
-      openKeyDialog();
       return;
     }
 
@@ -497,7 +331,7 @@ export default function AiAssistant() {
     setIsLoading(true);
 
     try {
-      const gemini = new GeminiService(activeKey, selectedModel);
+      const gemini = new GeminiService(apiKey);
 
       const context = {
         recipeCount: recipes.length,
@@ -508,7 +342,7 @@ export default function AiAssistant() {
       let streamedText = "";
 
       for await (const chunk of streamResult.stream) {
-        const chunkText = chunk.text || "";
+        const chunkText = chunk.text;
         if (!chunkText) continue;
 
         streamedText += chunkText;
@@ -566,10 +400,6 @@ export default function AiAssistant() {
 
       if (name === "AbortError" || message.includes("aborted")) {
         return;
-      }
-
-      if (message.includes("401") || message.includes("inválida") || message.includes("autorização")) {
-        setApiAuthError(message);
       }
 
       toast({
@@ -632,8 +462,8 @@ export default function AiAssistant() {
     setIsHistoryOpen(false);
   };
 
-  const normalizeAiRecipe = (recipeLike: Partial<Recipe> & Record<string, unknown> | undefined) => {
-    const payload = (recipeLike ?? {}) as Record<string, unknown>;
+  const normalizeAiRecipe = (recipeLike: Record<string, unknown> | undefined) => {
+    const payload = recipeLike ?? {};
     const equipmentSource = (payload.equipment ?? {}) as Record<string, unknown>;
     const defaultFermentable = { id: uid(), name: "Pale Ale", kg: 4, potential: 1.037, color: 3, type: "grao", price: 0 };
     const defaultHop = { id: uid(), name: "Cascade", grams: 25, alpha: 5.5, minutes: 60, use: "fervura" as const, price: 0 };
@@ -647,7 +477,7 @@ export default function AiAssistant() {
       efficiency: Number(equipmentSource.efficiency ?? payload.efficiency ?? defaultEquipment.efficiency) || defaultEquipment.efficiency,
     };
 
-    const normalizeUse = (value: unknown): "fervura" | "dryhop" | "whirlpool" | "primeiro_mosto" => {
+    const normalizeUse = (value: unknown): HopUse => {
       const raw = String(value ?? "fervura").trim().toLowerCase();
       if (raw.includes("dry") || raw.includes("dryhop") || raw.includes("dry-hop")) return "dryhop";
       if (raw.includes("whirl") || raw.includes("whirlpool")) return "whirlpool";
@@ -655,63 +485,41 @@ export default function AiAssistant() {
       return "fervura";
     };
 
-    const rawFermentables = Array.isArray(payload.fermentables) ? (payload.fermentables as Array<Record<string, unknown>>) : [];
-    const fermentables = rawFermentables.length > 0
-      ? rawFermentables.map((item, index) => ({
-          id: String(item?.id ?? `${uid()}-${index}`),
-          name: String(item?.name ?? defaultFermentable.name),
-          kg: Number(item?.kg ?? item?.amount ?? 0),
-          potential: Number(item?.potential ?? item?.yield ?? 80) > 0
-            ? (Number(item?.potential ?? item?.yield ?? 80) < 2 ? Number(item?.potential ?? item?.yield) : 1 + (((Number(item?.potential ?? item?.yield ?? 80) / 100) * 0.046)))
+    const fermentables = Array.isArray(payload.fermentables) && payload.fermentables.length > 0
+      ? payload.fermentables.map((item: Record<string, unknown>, index: number) => ({
+          id: String(item.id ?? `${uid()}-${index}`),
+          name: String(item.name ?? defaultFermentable.name),
+          kg: Number(item.kg ?? item.amount ?? 0),
+          potential: Number(item.potential ?? item.yield ?? 80) > 0
+            ? (Number(item.potential ?? item.yield ?? 80) < 2 ? Number(item.potential ?? item.yield) : 1 + (((Number(item.potential ?? item.yield ?? 80) / 100) * 0.046)))
             : defaultFermentable.potential,
-          color: Number(item?.color ?? 0),
-          type: String(item?.type ?? "grao"),
-          price: Number(item?.price ?? 0),
+          color: Number(item.color ?? 0),
+          type: String(item.type ?? "grao"),
+          price: Number(item.price ?? 0),
         }))
       : [defaultFermentable];
 
-    const rawHops = Array.isArray(payload.hops) ? (payload.hops as Array<Record<string, unknown>>) : [];
-    const hops = rawHops.length > 0
-      ? rawHops.map((item, index) => ({
-          id: String(item?.id ?? `${uid()}-${index}`),
-          name: String(item?.name ?? defaultHop.name),
-          grams: Number(item?.grams ?? item?.amount ?? 0),
-          alpha: Number(item?.alpha ?? 5),
-          minutes: Number(item?.minutes ?? item?.time ?? 60),
-          use: normalizeUse(item?.use),
-          price: Number(item?.price ?? 0),
+    const hops = Array.isArray(payload.hops) && payload.hops.length > 0
+      ? payload.hops.map((item: Record<string, unknown>, index: number) => ({
+          id: String(item.id ?? `${uid()}-${index}`),
+          name: String(item.name ?? defaultHop.name),
+          grams: Number(item.grams ?? item.amount ?? 0),
+          alpha: Number(item.alpha ?? 5),
+          minutes: Number(item.minutes ?? item.time ?? 60),
+          use: normalizeUse(item.use),
+          price: Number(item.price ?? 0),
         }))
       : [defaultHop];
 
-    const rawYeasts = Array.isArray(payload.yeasts) ? (payload.yeasts as Array<Record<string, unknown>>) : [];
-    const yeasts = rawYeasts.length > 0
-      ? rawYeasts.map((item, index) => ({
-          id: String(item?.id ?? `${uid()}-${index}`),
-          name: String(item?.name ?? defaultYeast.name),
-          attenuation: Number(item?.attenuation ?? 75),
-          packs: Number(item?.packs ?? 1),
-          price: Number(item?.price ?? 0),
+    const yeasts = Array.isArray(payload.yeasts) && payload.yeasts.length > 0
+      ? payload.yeasts.map((item: Record<string, unknown>, index: number) => ({
+          id: String(item.id ?? `${uid()}-${index}`),
+          name: String(item.name ?? defaultYeast.name),
+          attenuation: Number(item.attenuation ?? 75),
+          packs: Number(item.packs ?? 1),
+          price: Number(item.price ?? 0),
         }))
       : [defaultYeast];
-
-    const rawMashSteps = Array.isArray(payload.mashSteps) ? (payload.mashSteps as Array<Record<string, unknown>>) : [];
-    const mashSteps = rawMashSteps.length > 0
-      ? rawMashSteps.map((step, index) => ({
-          name: String(step?.name ?? `Etapa ${index + 1}`),
-          tempC: Number(step?.tempC ?? 66),
-          minutes: Number(step?.minutes ?? 60),
-        }))
-      : [{ name: "Sacarificação", tempC: 66, minutes: 60 }];
-
-    const rawMiscs = Array.isArray(payload.miscs) ? (payload.miscs as Array<Record<string, unknown>>) : [];
-    const miscs = rawMiscs.map((item, index) => ({
-      id: String(item?.id ?? `${uid()}-${index}`),
-      name: String(item?.name ?? "Adjunto"),
-      amount: Number(item?.amount ?? 0),
-      unit: String(item?.unit ?? "un"),
-      use: String(item?.use ?? "Fervura"),
-      price: Number(item?.price ?? 0),
-    }));
 
     const finalRecipe: Recipe = {
       id: String(payload.id ?? uid()),
@@ -720,13 +528,24 @@ export default function AiAssistant() {
       author: String(payload.author ?? "IA Assistant"),
       notes: String(payload.notes ?? `Receita gerada automaticamente pela IA em ${new Date().toLocaleString("pt-BR")}`),
       equipment,
-      mashSteps,
+      mashSteps: Array.isArray(payload.mashSteps) ? payload.mashSteps.map((step: Record<string, unknown>, index: number) => ({
+        name: String(step.name ?? `Etapa ${index + 1}`),
+        tempC: Number(step.tempC ?? 66),
+        minutes: Number(step.minutes ?? 60),
+      })) : [{ name: "Sacarificação", tempC: 66, minutes: 60 }],
       fermentationTempC: Number(payload.fermentationTempC ?? 19),
       fermentationDays: Number(payload.fermentationDays ?? 14),
       fermentables,
       hops,
       yeasts,
-      miscs,
+      miscs: Array.isArray(payload.miscs) ? payload.miscs.map((item: Record<string, unknown>, index: number) => ({
+        id: String(item.id ?? `${uid()}-${index}`),
+        name: String(item.name ?? "Adjunto"),
+        amount: Number(item.amount ?? 0),
+        unit: String(item.unit ?? "un"),
+        use: String(item.use ?? "Fervura"),
+        price: Number(item.price ?? 0),
+      })) : [],
       createdAt: String(payload.createdAt ?? new Date().toISOString()),
       updatedAt: new Date().toISOString(),
     };
@@ -879,40 +698,8 @@ export default function AiAssistant() {
         <div className="flex w-full flex-row flex-wrap items-center gap-2 md:w-auto">
           <img src={geminiLogo} alt="Assistente IA" className="w-16 h-16 object-contain" />
           <h1 className="text-2xl font-bold">Assistente IA</h1>
-          <label className="flex items-center gap-2 rounded-md border border-slate-600/70 bg-[#111827]/85 px-2.5 py-1.5 text-xs text-slate-200 shadow-sm backdrop-blur-sm">
-            <span className="font-medium text-slate-300">Modelo</span>
-            <select
-              value={selectedModel}
-              onChange={(e) => {
-                const nextModel = e.target.value.trim();
-                if (isSupportedGeminiModel(nextModel)) {
-                  setSelectedModel(nextModel);
-                }
-              }}
-              className="min-w-[220px] rounded-md border border-slate-600/80 bg-[#0f172a] px-2 py-1.5 text-xs text-slate-100 outline-none ring-0 transition focus:border-primary focus:ring-2 focus:ring-primary/30"
-              aria-label="Selecionar modelo de IA"
-            >
-              {(availableModels.length > 0 ? availableModels : [DEFAULT_GEMINI_MODEL]).map((model) => (
-                <option key={model} value={model} className="bg-[#0f172a] text-slate-100">
-                  {model}
-                </option>
-              ))}
-            </select>
-          </label>
         </div>
         <div className="flex w-full flex-row flex-wrap gap-2 md:w-auto">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={openKeyDialog}
-            className="flex items-center gap-1.5"
-            title="Configurar Chave da API Gemini"
-          >
-            <Key className="w-3.5 h-3.5 text-primary" />
-            <span>API Key</span>
-            {hasCustomKey && <span className="h-2 w-2 rounded-full bg-emerald-400" title="Chave personalizada ativa" />}
-          </Button>
-
           <Button variant="outline" size="sm" onClick={() => setIsHistoryOpen((prev) => !prev)}>
             Histórico
           </Button>
@@ -931,52 +718,14 @@ export default function AiAssistant() {
         </div>
       </div>
 
-      {apiAuthError && (
+      {!apiKey && (
         <Card className="mb-4 border-destructive bg-destructive/10">
-          <CardContent className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4">
-            <div className="flex items-center gap-3">
-              <AlertCircle className="text-destructive h-5 w-5 shrink-0" />
-              <div>
-                <p className="font-semibold text-destructive">Falha de autenticação com o Gemini (HTTP 401)</p>
-                <p className="text-sm text-slate-300">
-                  A chave de API configurada é inválida ou expirou. Atualize sua chave de API do Google AI Studio para utilizar o assistente.
-                </p>
-              </div>
+          <CardContent className="flex items-center gap-3 p-4">
+            <AlertCircle className="text-destructive" />
+            <div>
+              <p className="font-semibold text-destructive">API Key não configurada</p>
+              <p className="text-sm">VITE_GEMINI_API_KEY não foi encontrada. O assistente não funcionará sem uma chave válida.</p>
             </div>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={openKeyDialog}
-              className="shrink-0"
-            >
-              <Key className="w-4 h-4 mr-2" />
-              Configurar Chave
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {!cleanApiKey(apiKey) && !apiAuthError && (
-        <Card className="mb-4 border-destructive bg-destructive/10">
-          <CardContent className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4">
-            <div className="flex items-center gap-3">
-              <AlertCircle className="text-destructive h-5 w-5 shrink-0" />
-              <div>
-                <p className="font-semibold text-destructive">API Key não configurada</p>
-                <p className="text-sm text-slate-300">
-                  Nenhuma chave da API Gemini foi configurada. Insira sua chave gratuita do Google AI Studio para ativar o assistente.
-                </p>
-              </div>
-            </div>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={openKeyDialog}
-              className="shrink-0"
-            >
-              <Key className="w-4 h-4 mr-2" />
-              Configurar Chave
-            </Button>
           </CardContent>
         </Card>
       )}
@@ -1191,126 +940,6 @@ export default function AiAssistant() {
           </form>
         </Card>
       </div>
-
-      <Dialog open={isKeyDialogOpen} onOpenChange={setIsKeyDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Key className="h-5 w-5 text-primary" />
-              Configurar Chave da API Gemini
-            </DialogTitle>
-            <DialogDescription>
-              Insira sua chave de API do Google AI Studio para habilitar as funções de inteligência artificial do BrewCraft.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Chave da API (Google AI Studio)</label>
-              <Input
-                type="password"
-                placeholder="Ex: AIzaSy..."
-                value={keyInput}
-                onChange={(e) => {
-                  setKeyInput(e.target.value);
-                  setKeyStatus("idle");
-                  setKeyStatusMsg(null);
-                }}
-              />
-              <p className="text-xs text-muted-foreground">
-                Sua chave fica armazenada exclusivamente no seu navegador (localStorage).
-              </p>
-            </div>
-
-            {hasCustomKey && (
-              <div className="rounded-md bg-muted/60 p-2.5 text-xs text-muted-foreground flex items-center justify-between">
-                <span>Chave personalizada ativa no navegador</span>
-                <Badge variant="outline">Personalizada</Badge>
-              </div>
-            )}
-
-            {!hasCustomKey && cleanApiKey(import.meta.env.VITE_GEMINI_API_KEY) && (
-              <div className="rounded-md bg-muted/60 p-2.5 text-xs text-muted-foreground flex items-center justify-between">
-                <span>Usando chave padrão do ambiente</span>
-                <Badge variant="secondary">Ambiente</Badge>
-              </div>
-            )}
-
-            {keyStatusMsg && (
-              <div className={`p-3 rounded-md text-xs flex items-center gap-2 ${
-                keyStatus === "valid" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
-                keyStatus === "invalid" ? "bg-destructive/10 text-destructive border border-destructive/20" :
-                "bg-muted text-muted-foreground"
-              }`}>
-                {keyStatus === "valid" && <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />}
-                {keyStatus === "invalid" && <AlertCircle className="h-4 w-4 shrink-0 text-destructive" />}
-                <span>{keyStatusMsg}</span>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between pt-1">
-              <a
-                href="https://aistudio.google.com/app/apikey"
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-              >
-                Obter chave no Google AI Studio
-                <ExternalLink className="h-3 w-3" />
-              </a>
-
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleTestKey}
-                disabled={keyStatus === "testing" || !cleanApiKey(keyInput)}
-              >
-                {keyStatus === "testing" ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                    Testando...
-                  </>
-                ) : (
-                  "Testar Conexão"
-                )}
-              </Button>
-            </div>
-          </div>
-
-          <DialogFooter className="flex sm:justify-between gap-2 pt-2">
-            {hasCustomKey ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleRemoveCustomKey}
-                className="text-muted-foreground hover:text-destructive"
-              >
-                Remover Chave
-              </Button>
-            ) : <div />}
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setIsKeyDialogOpen(false)}
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={handleSaveKey}
-                disabled={!cleanApiKey(keyInput)}
-              >
-                Salvar Chave
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
