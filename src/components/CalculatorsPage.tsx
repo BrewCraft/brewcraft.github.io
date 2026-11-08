@@ -15,7 +15,7 @@ function ResultPanel({ results, error, locale }: { results: Result[]; error?: st
     {error ? <p role="alert" className="text-destructive text-sm">{error}</p> : <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">{results.map((result, i) => <div key={`${result.label}-${i}`} className="min-w-0"><dt className="text-sm text-muted-foreground mb-1">{result.label}</dt><dd className="text-2xl font-semibold text-primary break-words tabular-nums">{format(result.value, result.digits, locale)} <span className="text-sm font-medium text-muted-foreground">{result.unit}</span></dd></div>)}</dl>}
   </section>;
 }
-function UnitConverter({ fixed, locale = "pt-BR" }: { fixed: CalculatorDefinition["converter"]; locale?: string }) {
+function UnitConverter({ fixed, locale }: { fixed: CalculatorDefinition["converter"]; locale: string }) {
   const [family, setFamily] = useState<UnitFamily>(fixed && fixed !== "all" ? fixed : "volume");
   const units = Object.keys(unitFamilies[family].units);
   const [from, setFrom] = useState(units[0]);
@@ -35,7 +35,7 @@ function UnitConverter({ fixed, locale = "pt-BR" }: { fixed: CalculatorDefinitio
     <ResultPanel locale={locale} error={error} results={[{label:"Valor convertido",value:convertUnit(number,family,from,to),unit:to,digits:6}]} />
   </>;
 }
-function CalculationForm({ calculator, locale = "pt-BR" }: { calculator: CalculatorDefinition; locale?: string }) {
+function CalculationForm({ calculator, locale }: { calculator: CalculatorDefinition; locale: string }) {
   const defaults = Object.fromEntries(calculator.fields.map(field => [field.id, field.initial]));
   const [values, setValues] = useState<Values>(defaults);
   let error = validateCalculator(calculator, values);
@@ -88,7 +88,7 @@ export default function CalculatorsPage() {
       </aside>
       <section aria-label={calculator.title} className="min-w-0 bg-card border border-border rounded-lg p-5 sm:p-6 shadow-foam">
         <div className="border-b border-border pb-4"><p className="text-xs text-muted-foreground mb-1">{calculator.group}</p><h2 className="text-xl font-semibold text-foreground break-words">{calculator.title}</h2></div>
-        {calculator.converter ? <UnitConverter key={calculator.id} fixed={calculator.converter} /> : <CalculationForm key={calculator.id} calculator={calculator} />}
+        {calculator.converter ? <UnitConverter key={calculator.id} fixed={calculator.converter} locale={locale} /> : <CalculationForm key={calculator.id} calculator={calculator} locale={locale} />}
       </section>
     </div>
   </div>;
