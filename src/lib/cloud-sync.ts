@@ -37,7 +37,7 @@ export type ChatSession = {
 export const AI_CHAT_STORAGE_KEY = "brewcraft-ai-chats";
 export const AI_SYNC_ENABLED_STORAGE_KEY = "brewcraft-ai-sync-enabled";
 
-export const getSizeMB = (data: any) => (new Blob([JSON.stringify(data)]).size / (1024 * 1024)).toFixed(3);
+export const getSizeMB = (data: unknown) => (new Blob([JSON.stringify(data)]).size / (1024 * 1024)).toFixed(3);
 
 export const readStoredAiChats = (): ChatSession[] => {
   try {
@@ -1128,7 +1128,7 @@ async function findGoogleDriveFile(config: CloudSyncConfig) {
   const folderName = config.folder.trim();
   const fileName = config.fileName.trim() || defaultCloudSyncConfig.fileName;
   const folderQuery = folderName
-    ? `name = '${folderName.replace(/'/g, "\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
+    ? `name = '${folderName.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
     : "";
 
   let parentId: string | null = null;
@@ -1143,8 +1143,8 @@ async function findGoogleDriveFile(config: CloudSyncConfig) {
   }
 
   const query = parentId
-    ? `'${parentId}' in parents and name = '${fileName.replace(/'/g, "\'")}' and trashed = false`
-    : `name = '${fileName.replace(/'/g, "\'")}' and trashed = false`;
+    ? `'${parentId}' in parents and name = '${fileName.replace(/'/g, "\\'")}' and trashed = false`
+    : `name = '${fileName.replace(/'/g, "\\'")}' and trashed = false`;
 
   const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,modifiedTime,webViewLink)&pageSize=10`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -1159,7 +1159,7 @@ async function findGoogleDriveFile(config: CloudSyncConfig) {
 
 async function ensureGoogleDriveFolder(folderName: string, token: string) {
   if (!folderName.trim()) return null;
-  const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name = '${folderName.replace(/'/g, "\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`)}&fields=files(id,name)&pageSize=10`, {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name = '${folderName.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`)}&fields=files(id,name)&pageSize=10`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 

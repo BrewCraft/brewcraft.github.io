@@ -35,7 +35,7 @@ export function SettingsTheme() {
     apply();
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
-  }, [s.theme, s.language]);
+  }, [s]);
   return null;
 }
 const number = (v: number, d = 1, locale = getLocale()) => Number(v).toLocaleString(locale, { minimumFractionDigits: d, maximumFractionDigits: d });

@@ -73,7 +73,7 @@ export default function SettingsPage() {
   const [cloudConfig, setCloudConfig] = useState<ReturnType<typeof readCloudSyncConfig>>(() => readCloudSyncConfig("dropbox"));
   const [draftCloudConfig, setDraftCloudConfig] = useState<ReturnType<typeof readCloudSyncConfig>>(() => readCloudSyncConfig("dropbox"));
   const [cloudSyncMsg, setCloudSyncMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [syncConflict, setSyncConflict] = useState<any>(null);
+  const [syncConflict, setSyncConflict] = useState<{ provider?: CloudProvider; [key: string]: unknown } | null>(null);
 
   useEffect(() => {
     try {

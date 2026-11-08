@@ -31,7 +31,9 @@ jobs:
         run: npm ci
 
       - name: Build static app
-        run: npm run build
+        run: |
+          export VITE_GEMINI_API_KEY=$(echo -n "$VITE_GEMINI_API_KEY" | tr -d '\r\n[:space:]')
+          npm run build
         env:
           VITE_DROPBOX_CLIENT_ID: ${{ vars.VITE_DROPBOX_CLIENT_ID }}
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}

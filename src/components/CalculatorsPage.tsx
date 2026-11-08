@@ -15,7 +15,7 @@ function ResultPanel({ results, error, locale }: { results: Result[]; error?: st
     {error ? <p role="alert" className="text-destructive text-sm">{error}</p> : <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">{results.map((result, i) => <div key={`${result.label}-${i}`} className="min-w-0"><dt className="text-sm text-muted-foreground mb-1">{result.label}</dt><dd className="text-2xl font-semibold text-primary break-words tabular-nums">{format(result.value, result.digits, locale)} <span className="text-sm font-medium text-muted-foreground">{result.unit}</span></dd></div>)}</dl>}
   </section>;
 }
-function UnitConverter({ fixed, locale }: { fixed: CalculatorDefinition["converter"]; locale: string }) {
+function UnitConverter({ fixed, locale = "pt-BR" }: { fixed: CalculatorDefinition["converter"]; locale?: string }) {
   const [family, setFamily] = useState<UnitFamily>(fixed && fixed !== "all" ? fixed : "volume");
   const units = Object.keys(unitFamilies[family].units);
   const [from, setFrom] = useState(units[0]);
@@ -35,7 +35,7 @@ function UnitConverter({ fixed, locale }: { fixed: CalculatorDefinition["convert
     <ResultPanel locale={locale} error={error} results={[{label:"Valor convertido",value:convertUnit(number,family,from,to),unit:to,digits:6}]} />
   </>;
 }
-function CalculationForm({ calculator, locale }: { calculator: CalculatorDefinition; locale: string }) {
+function CalculationForm({ calculator, locale = "pt-BR" }: { calculator: CalculatorDefinition; locale?: string }) {
   const defaults = Object.fromEntries(calculator.fields.map(field => [field.id, field.initial]));
   const [values, setValues] = useState<Values>(defaults);
   let error = validateCalculator(calculator, values);

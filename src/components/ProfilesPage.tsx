@@ -121,7 +121,7 @@ export default function ProfilesPage() {
 
   useEffect(() => {
     if (def) setProfiles(readProfiles(def.storageKey));
-  }, [def?.slug, def?.storageKey]);
+  }, [def]);
 
   if (!def) return <Navigate to="/profiles/equipamento" replace />;
 

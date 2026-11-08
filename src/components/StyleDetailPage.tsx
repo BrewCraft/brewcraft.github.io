@@ -73,14 +73,14 @@ export default function StyleDetailPage() {
         <p className="mt-5 text-base leading-relaxed text-foreground">{detail.overview}</p>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-          {[
+          {([
             ["ABV", style.abv, "%"],
             ["OG", style.og, ""],
             ["FG", style.fg, ""],
             ["IBU", style.ibu, ""],
             ["EBC", ebcRange, ""],
             ["SRM", style.srm, ""],
-          ].map(([label, range, suffix]) => (
+          ] as Array<[string, [number, number], string]>).map(([label, range, suffix]) => (
             <div key={label} className="rounded-lg border border-border bg-background p-4">
               <div className="text-xs uppercase tracking-[0.15em] text-muted-foreground">{label}</div>
               <div className="mt-2 text-lg font-bold text-foreground">
