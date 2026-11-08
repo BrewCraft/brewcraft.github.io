@@ -1,67 +1,34 @@
 import { GoogleGenAI, type Content, type GenerateContentConfig, type Part } from "@google/genai";
 import { type Recipe } from "./recipe-calc";
 
-export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
-export const DEFAULT_GEMINI_3_MODEL = DEFAULT_GEMINI_MODEL;
+export const DEFAULT_GEMINI_3_MODEL = "gemini-3.8-flash";
 
-export const GEMINI_FALLBACK_MODELS = [
-  "gemini-2.5-flash",
-  "gemini-2.0-flash",
-  "gemini-1.5-flash",
-  "gemini-1.5-pro",
-  "gemini-2.0-flash-lite",
+export const GEMINI_3_FALLBACK_MODELS = [
   "gemini-3.8-flash",
   "gemini-3.7-flash",
   "gemini-3.6-flash",
   "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
   "gemini-3.1-pro-preview",
   "gemini-3-flash-preview",
 ] as const;
-export const GEMINI_3_FALLBACK_MODELS = GEMINI_FALLBACK_MODELS;
 
-export const cleanApiKey = (key?: string | null): string => {
-  if (!key) return "";
-  return key.trim().replace(/[\r\n\t]/g, "").replace(/^["']|["']$/g, "").trim();
-};
-
-export const GEMINI_API_KEY_STORAGE_KEY = "brewcraft-gemini-api-key";
-
-export const getStoredApiKey = (): string => {
-  if (typeof window === "undefined") return "";
-  const stored = localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY);
-  const cleanedStored = cleanApiKey(stored);
-  if (cleanedStored) {
-    return cleanedStored;
-  }
-  return cleanApiKey(import.meta.env.VITE_GEMINI_API_KEY);
-};
-
-export const setStoredApiKey = (key: string): void => {
-  if (typeof window === "undefined") return;
-  const cleaned = cleanApiKey(key);
-  if (cleaned) {
-    localStorage.setItem(GEMINI_API_KEY_STORAGE_KEY, cleaned);
-  } else {
-    localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY);
-  }
-  window.dispatchEvent(new CustomEvent("brewcraft-apikey-changed", { detail: cleaned }));
-};
-
-export const isSupportedGeminiModel = (modelName?: string | null) => {
+export const isGemini3TextModel = (modelName?: string | null) => {
   const normalized = (modelName ?? "").trim();
   if (!normalized) return false;
-  if (!/^gemini-/i.test(normalized)) return false;
+  if (!normalized.toLowerCase().startsWith("gemini-3")) return false;
+  if (/gemini-4/i.test(normalized)) return false;
   if (/(image|audio|video|tts|transcribe|embedding|voice|music)/i.test(normalized)) return false;
   return true;
 };
-export const isGemini3TextModel = isSupportedGeminiModel;
 
 export const resolveGeminiModelName = (modelName?: string | null) => {
   const normalized = (modelName ?? "").trim();
-  return isSupportedGeminiModel(normalized) ? normalized : DEFAULT_GEMINI_MODEL;
+  return isGemini3TextModel(normalized) ? normalized : DEFAULT_GEMINI_3_MODEL;
 };
 
-export const filterSupportedGeminiModels = (modelCatalog: Array<Record<string, unknown>> = []) => {
+export const filterGemini3TextModels = (modelCatalog: Array<Record<string, unknown>> = []) => {
   const normalized = modelCatalog
     .map((model) => {
       const rawName = String(model.name ?? "").trim();
@@ -74,18 +41,17 @@ export const filterSupportedGeminiModels = (modelCatalog: Array<Record<string, u
         ? model.supportedActions.map((value) => String(value))
         : [];
 
-      if (!isSupportedGeminiModel(name)) return null;
+      if (!isGemini3TextModel(name)) return null;
       const relevanceSignals = [...supportedGenerationMethods, ...supportedActions];
       const canGenerateText = relevanceSignals.some((value) => /generatecontent|generatemessage/i.test(value));
       const hasDisallowedFeature = /(image|audio|video|tts|transcribe|embedding|voice|music)/i.test(name);
       if (!canGenerateText && hasDisallowedFeature) return null;
-      return canGenerateText || /^gemini-/i.test(name) ? name : null;
+      return canGenerateText || /^gemini-3/i.test(name) ? name : null;
     })
     .filter((value): value is string => Boolean(value));
 
   return [...new Set(normalized)].sort((a, b) => a.localeCompare(b));
 };
-export const filterGemini3TextModels = filterSupportedGeminiModels;
 
 // Types
 export interface Message {
@@ -140,10 +106,10 @@ export class GeminiService {
   private apiKey: string;
   private modelName: string;
 
-  constructor(apiKey: string, modelName: string = DEFAULT_GEMINI_MODEL) {
-    this.apiKey = cleanApiKey(apiKey);
+  constructor(apiKey: string, modelName: string = DEFAULT_GEMINI_3_MODEL) {
+    this.apiKey = apiKey;
     this.modelName = resolveGeminiModelName(modelName);
-    this.ai = new GoogleGenAI({ apiKey: this.apiKey });
+    this.ai = new GoogleGenAI({ apiKey });
   }
 
   private getRequestConfig(signal?: AbortSignal): GenerateContentConfig {
@@ -193,7 +159,7 @@ export class GeminiService {
   }
 
   async chat(messages: Message[], context?: unknown, signal?: AbortSignal) {
-    const modelsToTry = [this.modelName, ...GEMINI_FALLBACK_MODELS.filter((model) => model !== this.modelName)];
+    const modelsToTry = [this.modelName, ...GEMINI_3_FALLBACK_MODELS.filter((model) => model !== this.modelName)];
 
     for (const modelName of modelsToTry) {
       try {
@@ -213,21 +179,19 @@ export class GeminiService {
           ? Number((error as { statusCode?: number }).statusCode)
           : undefined;
         const isQuotaError = errorMessage.includes("429") || status === 429 || statusCode === 429;
-        const isNotFoundError = errorMessage.includes("404") || status === 404 || statusCode === 404;
-        const isAuthError = status === 401 || statusCode === 401 || /api key|invalid.*key|unauthorized/i.test(errorMessage);
         const isLastModel = modelName === modelsToTry[modelsToTry.length - 1];
 
-        if (isAuthError) {
-          throw new Error("Chave da API Gemini inválida ou sem autorização para este modelo (HTTP 401).");
+        if (isQuotaError && !isLastModel) {
+          console.warn(`Modelo ${modelName} esgotado (429), tentando próximo fallback...`);
+          continue;
         }
 
         if (errorName === "AbortError" || errorMessage.includes("aborted")) {
           return "";
         }
 
-        if ((isQuotaError || isNotFoundError) && !isLastModel) {
-          console.warn(`Modelo ${modelName} falhou (${isQuotaError ? "429 - Cota" : "404 - Não encontrado"}), tentando próximo fallback...`);
-          continue;
+        if (status === 401 || statusCode === 401 || /api key|invalid.*key|unauthorized/i.test(errorMessage)) {
+          throw new Error("Chave da API Gemini inválida ou sem autorização para este modelo.");
         }
 
         console.error(`Gemini API Error (${modelName}):`, error);
@@ -240,7 +204,7 @@ export class GeminiService {
   }
 
   async chatStream(messages: Message[], context?: unknown, signal?: AbortSignal) {
-    const modelsToTry = [this.modelName, ...GEMINI_FALLBACK_MODELS.filter((model) => model !== this.modelName)];
+    const modelsToTry = [this.modelName, ...GEMINI_3_FALLBACK_MODELS.filter((model) => model !== this.modelName)];
 
     for (const modelName of modelsToTry) {
       try {
@@ -261,28 +225,26 @@ export class GeminiService {
           ? Number((error as { statusCode?: number }).statusCode)
           : undefined;
         const isQuotaError = errorMessage.includes("429") || status === 429 || statusCode === 429;
-        const isNotFoundError = errorMessage.includes("404") || status === 404 || statusCode === 404;
-        const isAuthError = status === 401 || statusCode === 401 || /api key|invalid.*key|unauthorized/i.test(errorMessage);
         const isLastModel = modelName === modelsToTry[modelsToTry.length - 1];
 
-        if (isAuthError) {
-          throw new Error("Chave da API Gemini inválida ou sem autorização para este modelo (HTTP 401).");
+        if (isQuotaError && !isLastModel) {
+          console.warn(`Modelo ${modelName} esgotado (429), tentando próximo fallback...`);
+          continue;
         }
 
         if (errorName === "AbortError" || errorMessage.includes("aborted")) {
           throw error;
         }
 
-        if ((isQuotaError || isNotFoundError) && !isLastModel) {
-          console.warn(`Modelo ${modelName} falhou (${isQuotaError ? "429 - Cota" : "404 - Não encontrado"}), tentando próximo fallback...`);
-          continue;
+        if (status === 401 || statusCode === 401 || /api key|invalid.*key|unauthorized/i.test(errorMessage)) {
+          throw new Error("Chave da API Gemini inválida ou sem autorização para este modelo.");
         }
 
         if (isLastModel) throw error;
       }
     }
 
-    throw new Error("Todos os modelos Gemini disponíveis falharam");
+    throw new Error("Todos os modelos Gemini 3 disponíveis falharam");
   }
 
   // Extract JSON recipe from text response
