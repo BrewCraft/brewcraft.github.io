@@ -4,14 +4,12 @@ import { type Recipe } from "./recipe-calc";
 export const DEFAULT_GEMINI_3_MODEL = "gemini-3.8-flash";
 
 export const GEMINI_3_FALLBACK_MODELS = [
-  "gemini-3.8-flash",
   "gemini-3.7-flash",
   "gemini-3.6-flash",
   "gemini-3.5-flash",
   "gemini-3.5-flash-lite",
   "gemini-3.1-flash-lite",
-  "gemini-3.8-live",
-  "gemini-3.8-live-extended-thinking",
+  "gemini-3.8-flash",
 ] as const;
 
 export const isGemini3TextModel = (modelName?: string | null) => {
