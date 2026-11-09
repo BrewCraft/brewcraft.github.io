@@ -106,19 +106,32 @@ Diretrizes:
 - Quando o usuário tiver dúvida que pode ser resolvida por ferramentas do app, sugira usar o menu lateral correspondente.
 `;
 
+export enum GeminiErrorClassification {
+  MODEL_LIMIT = "MODEL_LIMIT",         // RPM, TPM, RPD for specific model
+  GLOBAL_QUOTA = "GLOBAL_QUOTA",       // Billing, Project-wide limit
+  SERVICE_OVERLOAD = "SERVICE_OVERLOAD", // 503, temporary busy
+  AUTH_INVALID = "AUTH_INVALID",       // 401, 403
+  NOT_FOUND = "NOT_FOUND",             // 404
+  OTHER = "OTHER"
+}
+
 export interface GeminiError extends Error {
   status?: number;
   statusCode?: number;
   reason?: string;
   retryAfter?: number;
+  classification?: GeminiErrorClassification;
 }
 
 export interface ChatResponse {
   text: string;
   modelUsed: string;
   isFallback: boolean;
-  errorDetail?: string;
+  classification?: GeminiErrorClassification;
 }
+
+// Global registry for model availability to avoid retrying failed models too soon
+const modelBlacklist: Record<string, { until: number; reason: GeminiErrorClassification }> = {};
 
 export class GeminiService {
   private ai: GoogleGenAI;
@@ -131,167 +144,184 @@ export class GeminiService {
     this.ai = new GoogleGenAI({ apiKey });
   }
 
-  private getRequestConfig(signal?: AbortSignal): GenerateContentConfig {
-    return {
-      abortSignal: signal,
-      systemInstruction: SYSTEM_PROMPT,
-      tools: [
-        {
-          googleSearch: {},
-        },
-      ],
+  private classifyError(error: unknown): GeminiErrorClassification {
+    const err = error as any;
+    const message = (err.message || "").toUpperCase();
+    const status = err.status || err.statusCode;
+
+    if (status === 401 || status === 403 || message.includes("API_KEY_INVALID") || message.includes("UNAUTHORIZED")) {
+      return GeminiErrorClassification.AUTH_INVALID;
+    }
+
+    if (status === 404) return GeminiErrorClassification.NOT_FOUND;
+
+    if (status === 429) {
+      if (message.includes("BILLING") || message.includes("PLAN") || message.includes("PROJECT QUOTA") || message.includes("ACCOUNT")) {
+        return GeminiErrorClassification.GLOBAL_QUOTA;
+      }
+      return GeminiErrorClassification.MODEL_LIMIT;
+    }
+
+    if (status >= 500 || message.includes("OVERLOADED") || message.includes("BUSY") || message.includes("SERVICE_UNAVAILABLE")) {
+      return GeminiErrorClassification.SERVICE_OVERLOAD;
+    }
+
+    return GeminiErrorClassification.OTHER;
+  }
+
+  private async wait(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  private isModelAvailable(model: string): boolean {
+    const record = modelBlacklist[model];
+    if (!record) return true;
+    if (Date.now() > record.until) {
+      delete modelBlacklist[model];
+      return true;
+    }
+    return false;
+  }
+
+  private markModelUnavailable(model: string, classification: GeminiErrorClassification, durationMs: number = 60000) {
+    modelBlacklist[model] = {
+      until: Date.now() + durationMs,
+      reason: classification
     };
   }
 
-  private buildContents(messages: Message[], context?: unknown): Content[] {
-    return messages.map((message, index) => {
-      const role = message.role === "system" ? "user" : message.role === "model" ? "model" : "user";
-      const parts: Part[] = [];
-      const isLastMessage = index === messages.length - 1;
-
-      let text = message.content ?? "";
-      if (isLastMessage && context !== undefined && context !== null && message.role === "user") {
-        text += `\n\nContexto do BrewCraft: ${JSON.stringify(context)}`;
-      }
-
-      if (text) {
-        parts.push({ text });
-      }
-
-      if (message.image) {
-        const imageData = message.image.includes(",") ? message.image.split(",")[1] : message.image;
-        const mimeMatch = message.image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
-        const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
-        parts.push({
-          inlineData: {
-            mimeType,
-            data: imageData,
-          },
-        });
-      }
-
-      return {
-        role,
-        parts,
-      };
-    });
-  }
-
-  private isQuotaError(error: unknown): boolean {
-    const err = error as GeminiError;
-    const errorMessage = err.message || "";
-    const status = err.status || err.statusCode;
-    
-    return (
-      status === 429 || 
-      errorMessage.includes("429") || 
-      errorMessage.includes("RESOURCE_EXHAUSTED") ||
-      /rate limit|quota/i.test(errorMessage)
-    );
-  }
-
-  private getRetryDelay(error: unknown): number | null {
-    const err = error as GeminiError;
-    // In some cases the API returns a retry-after header or a specific field in the error
-    if (err.retryAfter) return err.retryAfter * 1000;
-    
-    // Check if message contains something like "retry after X seconds"
-    const match = err.message?.match(/retry after (\d+)s/i);
-    if (match) return parseInt(match[1]) * 1000;
-    
-    return null;
-  }
-
   async chat(messages: Message[], context?: unknown, signal?: AbortSignal): Promise<ChatResponse> {
-    const modelsToTry = [this.modelName, ...GEMINI_3_FALLBACK_MODELS.filter((model) => model !== this.modelName)];
-    let lastError: Error | null = null;
+    const allModels = [this.modelName, ...GEMINI_3_FALLBACK_MODELS.filter((model) => model !== this.modelName)];
+    const modelsToTry = allModels.filter(m => this.isModelAvailable(m));
+    
+    // If all models are blacklisted, fallback to try the requested one anyway
+    if (modelsToTry.length === 0) modelsToTry.push(this.modelName);
+
+    let lastError: GeminiError | null = null;
 
     for (const modelName of modelsToTry) {
-      try {
-        const response = await this.ai.models.generateContent({
-          model: modelName,
-          contents: this.buildContents(messages, context),
-          config: this.getRequestConfig(signal),
-        });
-        
-        return {
-          text: response.text?.trim() || "",
-          modelUsed: modelName,
-          isFallback: modelName !== this.modelName
-        };
-      } catch (error: unknown) {
-        lastError = error as Error;
-        const errorMessage = lastError.message;
-        const isQuota = this.isQuotaError(error);
-        const isLastModel = modelName === modelsToTry[modelsToTry.length - 1];
+      let attempts = 0;
+      const maxAttempts = 3;
 
-        if (isQuota && !isLastModel) {
-          const delay = this.getRetryDelay(error);
-          if (delay && delay < 5000) { // If it's a short delay, maybe wait? But here we prefer fallback.
-             await new Promise(resolve => setTimeout(resolve, delay));
+      while (attempts < maxAttempts) {
+        try {
+          const response = await this.ai.models.generateContent({
+            model: modelName,
+            contents: this.buildContents(messages, context),
+            config: this.getRequestConfig(signal),
+          });
+          
+          return {
+            text: response.text?.trim() || "",
+            modelUsed: modelName,
+            isFallback: modelName !== this.modelName
+          };
+        } catch (error: unknown) {
+          lastError = error as GeminiError;
+          const classification = this.classifyError(error);
+          lastError.classification = classification;
+
+          if (lastError.name === "AbortError" || lastError.message.includes("aborted")) {
+            return { text: "", modelUsed: this.modelName, isFallback: false };
           }
-          console.warn(`Modelo ${modelName} esgotado (429), tentando próximo fallback...`);
-          continue;
-        }
 
-        if (lastError.name === "AbortError" || errorMessage.includes("aborted")) {
-          return { text: "", modelUsed: this.modelName, isFallback: false };
-        }
+          if (classification === GeminiErrorClassification.GLOBAL_QUOTA) {
+            throw new Error("Cota global excedida ou problema de faturamento. Verifique o console do Google AI Studio. Mudar de modelo não resolverá.");
+          }
 
-        const status = (error as GeminiError).status || (error as GeminiError).statusCode;
-        if (status === 401 || status === 403 || /api key|invalid.*key|unauthorized/i.test(errorMessage)) {
-          throw new Error("Chave da API Gemini inválida ou sem autorização para este modelo.");
-        }
+          if (classification === GeminiErrorClassification.AUTH_INVALID) {
+            throw new Error("Chave da API Gemini inválida ou sem autorização.");
+          }
 
-        console.error(`Gemini API Error (${modelName}):`, error);
-        if (isLastModel) {
-          throw lastError;
+          if (classification === GeminiErrorClassification.SERVICE_OVERLOAD) {
+            attempts++;
+            if (attempts < maxAttempts) {
+              const delay = Math.pow(2, attempts) * 1000;
+              console.warn(`Serviço sobrecarregado (${modelName}), tentando novamente em ${delay}ms...`);
+              await this.wait(delay);
+              continue;
+            }
+          }
+
+          if (classification === GeminiErrorClassification.MODEL_LIMIT) {
+             console.warn(`Modelo ${modelName} atingiu limite específico. Tentando próximo modelo...`);
+             this.markModelUnavailable(modelName, classification, 60000);
+             break; // Try next model in for loop
+          }
+
+          // If it's something else or we exhausted attempts
+          console.error(`Gemini API Error (${modelName}):`, error);
+          if (modelName === modelsToTry[modelsToTry.length - 1]) {
+            throw lastError;
+          }
+          break; // Try next model
         }
       }
     }
-    return { text: "", modelUsed: this.modelName, isFallback: false };
+    throw lastError || new Error("Falha ao comunicar com os modelos Gemini.");
   }
 
   async chatStream(messages: Message[], context?: unknown, signal?: AbortSignal) {
-    const modelsToTry = [this.modelName, ...GEMINI_3_FALLBACK_MODELS.filter((model) => model !== this.modelName)];
+    const allModels = [this.modelName, ...GEMINI_3_FALLBACK_MODELS.filter((model) => model !== this.modelName)];
+    const modelsToTry = allModels.filter(m => this.isModelAvailable(m));
+    if (modelsToTry.length === 0) modelsToTry.push(this.modelName);
+
+    let lastError: GeminiError | null = null;
 
     for (const modelName of modelsToTry) {
-      try {
-        const responseStream = await this.ai.models.generateContentStream({
-          model: modelName,
-          contents: this.buildContents(messages, context),
-          config: this.getRequestConfig(signal),
-        });
+      let attempts = 0;
+      const maxAttempts = 2;
 
-        return { 
-          stream: responseStream, 
-          modelUsed: modelName, 
-          isFallback: modelName !== this.modelName 
-        };
-      } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : "Falha na comunicação com o Gemini";
-        const isQuota = this.isQuotaError(error);
-        const isLastModel = modelName === modelsToTry[modelsToTry.length - 1];
+      while (attempts < maxAttempts) {
+        try {
+          const responseStream = await this.ai.models.generateContentStream({
+            model: modelName,
+            contents: this.buildContents(messages, context),
+            config: this.getRequestConfig(signal),
+          });
 
-        if (isQuota && !isLastModel) {
-          console.warn(`Modelo ${modelName} esgotado (429), tentando próximo fallback...`);
-          continue;
+          return { 
+            stream: responseStream, 
+            modelUsed: modelName, 
+            isFallback: modelName !== this.modelName 
+          };
+        } catch (error: unknown) {
+          lastError = error as GeminiError;
+          const classification = this.classifyError(error);
+          lastError.classification = classification;
+
+          if (lastError.name === "AbortError" || lastError.message.includes("aborted")) {
+            throw lastError;
+          }
+
+          if (classification === GeminiErrorClassification.GLOBAL_QUOTA) {
+            throw new Error("Cota global do projeto esgotada. Verifique seu faturamento no Google Cloud/AI Studio.");
+          }
+
+          if (classification === GeminiErrorClassification.AUTH_INVALID) {
+            throw new Error("Chave da API Gemini inválida.");
+          }
+
+          if (classification === GeminiErrorClassification.SERVICE_OVERLOAD) {
+            attempts++;
+            if (attempts < maxAttempts) {
+              await this.wait(1500 * attempts);
+              continue;
+            }
+          }
+
+          if (classification === GeminiErrorClassification.MODEL_LIMIT) {
+            this.markModelUnavailable(modelName, classification, 45000);
+            break;
+          }
+
+          if (modelName === modelsToTry[modelsToTry.length - 1]) throw lastError;
+          break;
         }
-
-        if (error instanceof Error && (error.name === "AbortError" || errorMessage.includes("aborted"))) {
-          throw error;
-        }
-
-        const status = (error as GeminiError).status || (error as GeminiError).statusCode;
-        if (status === 401 || status === 403 || /api key|invalid.*key|unauthorized/i.test(errorMessage)) {
-          throw new Error("Chave da API Gemini inválida ou sem autorização para este modelo.");
-        }
-
-        if (isLastModel) throw error;
       }
     }
 
-    throw new Error("Todos os modelos Gemini 3 disponíveis falharam");
+    throw lastError || new Error("Todos os modelos Gemini 3 disponíveis falharam");
   }
 
   // Extract JSON recipe from text response
