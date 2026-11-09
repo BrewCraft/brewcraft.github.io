@@ -3,6 +3,11 @@ import { type Recipe } from "./recipe-calc";
 
 export const DEFAULT_GEMINI_3_MODEL = "gemini-3.8-flash";
 
+export const GEMINI_3_LIVE_MODELS = [
+  "gemini-3.8-live",
+  "gemini-3.8-live-extended-thinking",
+] as const;
+
 export const GEMINI_3_FALLBACK_MODELS = [
   "gemini-3.7-flash",
   "gemini-3.6-flash",
@@ -11,6 +16,8 @@ export const GEMINI_3_FALLBACK_MODELS = [
   "gemini-3.1-flash-lite",
   "gemini-3.8-flash",
 ] as const;
+
+export type GeminiModelType = typeof GEMINI_3_FALLBACK_MODELS[number] | typeof GEMINI_3_LIVE_MODELS[number];
 
 export const isGemini3TextModel = (modelName?: string | null) => {
   const normalized = (modelName ?? "").trim();
@@ -99,6 +106,20 @@ Diretrizes:
 - Quando o usuário tiver dúvida que pode ser resolvida por ferramentas do app, sugira usar o menu lateral correspondente.
 `;
 
+export interface GeminiError extends Error {
+  status?: number;
+  statusCode?: number;
+  reason?: string;
+  retryAfter?: number;
+}
+
+export interface ChatResponse {
+  text: string;
+  modelUsed: string;
+  isFallback: boolean;
+  errorDetail?: string;
+}
+
 export class GeminiService {
   private ai: GoogleGenAI;
   private apiKey: string;
@@ -156,8 +177,34 @@ export class GeminiService {
     });
   }
 
-  async chat(messages: Message[], context?: unknown, signal?: AbortSignal) {
+  private isQuotaError(error: unknown): boolean {
+    const err = error as GeminiError;
+    const errorMessage = err.message || "";
+    const status = err.status || err.statusCode;
+    
+    return (
+      status === 429 || 
+      errorMessage.includes("429") || 
+      errorMessage.includes("RESOURCE_EXHAUSTED") ||
+      /rate limit|quota/i.test(errorMessage)
+    );
+  }
+
+  private getRetryDelay(error: unknown): number | null {
+    const err = error as GeminiError;
+    // In some cases the API returns a retry-after header or a specific field in the error
+    if (err.retryAfter) return err.retryAfter * 1000;
+    
+    // Check if message contains something like "retry after X seconds"
+    const match = err.message?.match(/retry after (\d+)s/i);
+    if (match) return parseInt(match[1]) * 1000;
+    
+    return null;
+  }
+
+  async chat(messages: Message[], context?: unknown, signal?: AbortSignal): Promise<ChatResponse> {
     const modelsToTry = [this.modelName, ...GEMINI_3_FALLBACK_MODELS.filter((model) => model !== this.modelName)];
+    let lastError: Error | null = null;
 
     for (const modelName of modelsToTry) {
       try {
@@ -166,39 +213,43 @@ export class GeminiService {
           contents: this.buildContents(messages, context),
           config: this.getRequestConfig(signal),
         });
-        return response.text?.trim() || "";
+        
+        return {
+          text: response.text?.trim() || "",
+          modelUsed: modelName,
+          isFallback: modelName !== this.modelName
+        };
       } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : "Falha na comunicação com o Gemini";
-        const errorName = error instanceof Error ? error.name : "Error";
-        const status = typeof error === "object" && error !== null && "status" in error
-          ? Number((error as { status?: number }).status)
-          : undefined;
-        const statusCode = typeof error === "object" && error !== null && "statusCode" in error
-          ? Number((error as { statusCode?: number }).statusCode)
-          : undefined;
-        const isQuotaError = errorMessage.includes("429") || status === 429 || statusCode === 429;
+        lastError = error as Error;
+        const errorMessage = lastError.message;
+        const isQuota = this.isQuotaError(error);
         const isLastModel = modelName === modelsToTry[modelsToTry.length - 1];
 
-        if (isQuotaError && !isLastModel) {
+        if (isQuota && !isLastModel) {
+          const delay = this.getRetryDelay(error);
+          if (delay && delay < 5000) { // If it's a short delay, maybe wait? But here we prefer fallback.
+             await new Promise(resolve => setTimeout(resolve, delay));
+          }
           console.warn(`Modelo ${modelName} esgotado (429), tentando próximo fallback...`);
           continue;
         }
 
-        if (errorName === "AbortError" || errorMessage.includes("aborted")) {
-          return "";
+        if (lastError.name === "AbortError" || errorMessage.includes("aborted")) {
+          return { text: "", modelUsed: this.modelName, isFallback: false };
         }
 
-        if (status === 401 || statusCode === 401 || /api key|invalid.*key|unauthorized/i.test(errorMessage)) {
+        const status = (error as GeminiError).status || (error as GeminiError).statusCode;
+        if (status === 401 || status === 403 || /api key|invalid.*key|unauthorized/i.test(errorMessage)) {
           throw new Error("Chave da API Gemini inválida ou sem autorização para este modelo.");
         }
 
         console.error(`Gemini API Error (${modelName}):`, error);
         if (isLastModel) {
-          throw new Error(errorMessage);
+          throw lastError;
         }
       }
     }
-    return "";
+    return { text: "", modelUsed: this.modelName, isFallback: false };
   }
 
   async chatStream(messages: Message[], context?: unknown, signal?: AbortSignal) {
@@ -212,29 +263,27 @@ export class GeminiService {
           config: this.getRequestConfig(signal),
         });
 
-        return { stream: responseStream };
+        return { 
+          stream: responseStream, 
+          modelUsed: modelName, 
+          isFallback: modelName !== this.modelName 
+        };
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : "Falha na comunicação com o Gemini";
-        const errorName = error instanceof Error ? error.name : "Error";
-        const status = typeof error === "object" && error !== null && "status" in error
-          ? Number((error as { status?: number }).status)
-          : undefined;
-        const statusCode = typeof error === "object" && error !== null && "statusCode" in error
-          ? Number((error as { statusCode?: number }).statusCode)
-          : undefined;
-        const isQuotaError = errorMessage.includes("429") || status === 429 || statusCode === 429;
+        const isQuota = this.isQuotaError(error);
         const isLastModel = modelName === modelsToTry[modelsToTry.length - 1];
 
-        if (isQuotaError && !isLastModel) {
+        if (isQuota && !isLastModel) {
           console.warn(`Modelo ${modelName} esgotado (429), tentando próximo fallback...`);
           continue;
         }
 
-        if (errorName === "AbortError" || errorMessage.includes("aborted")) {
+        if (error instanceof Error && (error.name === "AbortError" || errorMessage.includes("aborted"))) {
           throw error;
         }
 
-        if (status === 401 || statusCode === 401 || /api key|invalid.*key|unauthorized/i.test(errorMessage)) {
+        const status = (error as GeminiError).status || (error as GeminiError).statusCode;
+        if (status === 401 || status === 403 || /api key|invalid.*key|unauthorized/i.test(errorMessage)) {
           throw new Error("Chave da API Gemini inválida ou sem autorização para este modelo.");
         }
 

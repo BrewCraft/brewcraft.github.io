@@ -7,7 +7,10 @@ import {
   Trash2, 
   Image as ImageIcon, 
   AlertCircle,
-  Mic
+  Mic,
+  MicOff,
+  Settings2,
+  Brain
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +18,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { GeminiService, type Message } from "@/lib/gemini";
+import { GeminiService, type Message, GEMINI_3_LIVE_MODELS, GEMINI_3_FALLBACK_MODELS, DEFAULT_GEMINI_3_MODEL } from "@/lib/gemini";
+import { useGeminiLive } from "@/hooks/use-gemini-live";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   AI_SYNC_ENABLED_STORAGE_KEY,
   getSizeMB,
@@ -116,6 +126,11 @@ export default function AiAssistant() {
   const [isRecording, setIsRecording] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [retryMessage, setRetryMessage] = useState<{ text: string; image?: string } | null>(null);
+  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_GEMINI_3_MODEL);
+  const [actualModelUsed, setActualModelUsed] = useState<string | null>(null);
+  const [fallbackOccurred, setFallbackOccurred] = useState(false);
+  const [liveModel, setLiveModel] = useState<string>("gemini-3.8-live");
+  
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -126,6 +141,22 @@ export default function AiAssistant() {
   const [inventory, setInventory] = useInventory();
 
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+  const live = useGeminiLive({
+    apiKey: apiKey || "",
+    model: liveModel,
+    onResponse: (text) => {
+      // In Live mode, we might want to append to a special "live" message
+      // or just handle it as transient. For now, let's keep it in context.
+    },
+    onError: (err) => {
+      toast({
+        title: "Erro no Gemini Live",
+        description: err.message,
+        variant: "destructive",
+      });
+    }
+  });
   const totalHistorySizeMB = history.reduce((total, chat) => total + Number(getSizeMB(chat)), 0);
 
   const scrollToBottom = () => {
@@ -329,9 +360,11 @@ export default function AiAssistant() {
     setInput("");
     setSelectedImage(null);
     setIsLoading(true);
+    setFallbackOccurred(false);
+    setActualModelUsed(null);
 
     try {
-      const gemini = new GeminiService(apiKey);
+      const gemini = new GeminiService(apiKey, selectedModel);
 
       const context = {
         recipeCount: recipes.length,
@@ -340,6 +373,9 @@ export default function AiAssistant() {
 
       const streamResult = await gemini.chatStream([...messages, userMessage], context, nextAbortController.signal);
       let streamedText = "";
+      
+      setActualModelUsed(streamResult.modelUsed);
+      setFallbackOccurred(streamResult.isFallback);
 
       for await (const chunk of streamResult.stream) {
         const chunkText = chunk.text;
@@ -641,7 +677,11 @@ export default function AiAssistant() {
           const recipeData = (action.payload?.recipe ?? action.payload) as Partial<Recipe> & Record<string, unknown> | undefined;
           const newRecipe = normalizeAiRecipe(recipeData);
 
-          setRecipes([...recipes, newRecipe as Recipe]);
+          // Check if recipe with same name exists recently to avoid duplicates on fallback retries
+          const exists = recipes.some(r => r.name === newRecipe.name && (Date.now() - new Date(r.createdAt).getTime() < 30000));
+          if (!exists) {
+             setRecipes([...recipes, newRecipe as Recipe]);
+          }
           return true;
         }
         case "UPDATE_RECIPE": {
@@ -676,7 +716,11 @@ export default function AiAssistant() {
           } as Recipe;
 
           const updatedRecipes = currentRecipes.map((recipe) => recipe.id === payload.id ? receitaAtualizadaCalculada : recipe);
-          setRecipes(updatedRecipes);
+          
+          // Only update if something actually changed to avoid redundant updates on retries
+          if (JSON.stringify(previousRecipe) !== JSON.stringify(receitaAtualizadaCalculada)) {
+            setRecipes(updatedRecipes);
+          }
           return true;
         }
         case "UPDATE_SETTING": {
@@ -697,7 +741,44 @@ export default function AiAssistant() {
       <div className="mb-4 flex w-full flex-col flex-wrap items-start justify-between gap-4 md:flex-row md:items-center">
         <div className="flex w-full flex-row flex-wrap items-center gap-2 md:w-auto">
           <img src={geminiLogo} alt="Assistente IA" className="w-16 h-16 object-contain" />
-          <h1 className="text-2xl font-bold">Assistente IA</h1>
+          <div>
+            <h1 className="text-2xl font-bold">Assistente IA</h1>
+            <div className="flex items-center gap-2 mt-1">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center gap-1.5 cursor-help">
+                      <Badge variant="secondary" className="text-[10px] py-0 h-5 font-normal">
+                        {actualModelUsed || selectedModel}
+                      </Badge>
+                      {fallbackOccurred && (
+                        <Badge variant="outline" className="text-[10px] py-0 h-5 border-amber-500 text-amber-600 bg-amber-50">
+                          Fallback Ativo
+                        </Badge>
+                      )}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">Modelo selecionado: {selectedModel}</p>
+                    <p className="text-xs">Modelo em uso: {actualModelUsed || selectedModel}</p>
+                    {fallbackOccurred && <p className="text-xs text-amber-600 mt-1">O modelo principal atingiu limite de cota.</p>}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+
+              <select 
+                value={selectedModel} 
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="bg-transparent text-[10px] border rounded px-1 h-5 focus:outline-none"
+              >
+                <optgroup label="Modelos Principais">
+                  {GEMINI_3_FALLBACK_MODELS.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
+          </div>
         </div>
         <div className="flex w-full flex-row flex-wrap gap-2 md:w-auto">
           <Button variant="outline" size="sm" onClick={() => setIsHistoryOpen((prev) => !prev)}>
@@ -800,7 +881,16 @@ export default function AiAssistant() {
           </aside>
         )}
 
-        <Card className="flex-1 overflow-hidden flex flex-col bg-slate-50/50 dark:bg-slate-900/50 min-h-0">
+        <Card className="flex-1 overflow-hidden flex flex-col bg-slate-50/50 dark:bg-slate-900/50 min-h-0 relative">
+          <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
+            {live.isActive && (
+              <Badge variant="outline" className="bg-red-50 text-red-600 border-red-200 animate-pulse flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-red-600" />
+                Gemini Live Ativo
+                {live.isSpeaking && " (Falando)"}
+              </Badge>
+            )}
+          </div>
           <ScrollArea className="flex-1 p-4" ref={scrollRef}>
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center space-y-4 pt-12">
@@ -920,12 +1010,40 @@ export default function AiAssistant() {
                 variant="outline"
                 size="icon"
                 type="button"
-                onClick={toggleRecording}
-                disabled={isLoading}
-                aria-label={isRecording ? "Parar gravação de voz" : "Gravar por voz"}
+                onClick={live.isActive ? live.disconnect : live.connect}
+                disabled={isLoading || live.isConnecting}
+                className={live.isActive ? "bg-red-50 border-red-200 text-red-600 hover:bg-red-100" : ""}
+                aria-label={live.isActive ? "Encerrar conversa Live" : "Iniciar Gemini Live"}
               >
-                <Mic className={`w-5 h-5 ${isRecording ? "text-red-500 animate-pulse" : ""}`} />
+                {live.isConnecting ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : live.isActive ? (
+                  <MicOff className="w-5 h-5" />
+                ) : (
+                  <Brain className="w-5 h-5" />
+                )}
               </Button>
+              <div className="flex flex-col gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  type="button"
+                  onClick={toggleRecording}
+                  disabled={isLoading || live.isActive}
+                  aria-label={isRecording ? "Parar gravação de voz" : "Gravar por voz"}
+                >
+                  <Mic className={`w-5 h-5 ${isRecording ? "text-red-500 animate-pulse" : ""}`} />
+                </Button>
+                {live.isActive && (
+                   <select 
+                     value={liveModel} 
+                     onChange={(e) => setLiveModel(e.target.value)}
+                     className="absolute -top-8 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-800 border rounded text-[10px] px-1 shadow-sm"
+                   >
+                     {GEMINI_3_LIVE_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+                   </select>
+                )}
+              </div>
               <Input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
