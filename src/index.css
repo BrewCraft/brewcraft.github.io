@@ -1,0 +1,164 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* BrewCraft visual system - balanced light and dark variants */
+    --background: 210 24% 96%;
+    --foreground: 222 26% 18%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 26% 18%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 26% 18%;
+
+    --primary: 214 74% 58%;
+    --primary-foreground: 222 47% 18%;
+    --primary-glow: 214 82% 66%;
+
+    --secondary: 210 18% 92%;
+    --secondary-foreground: 222 26% 18%;
+
+    --muted: 210 18% 94%;
+    --muted-foreground: 217 16% 35%;
+
+    --accent: 214 74% 58%;
+    --accent-foreground: 222 47% 18%;
+
+    --success: 145 56% 50%;
+    --success-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 22% 86%;
+    --input: 214 22% 90%;
+    --ring: 214 74% 58%;
+    --mug-metric-ink: 0 0% 100%;
+    --mug-metric-outline: 0 0% 16%;
+    --mug-type-paper: 42 25% 78%;
+    --mug-type-amber: 37 82% 60%;
+    --mug-type-gold: 47 73% 56%;
+    --mug-font-tall: 'Mug Tall', 'Arial Narrow', sans-serif;
+    --mug-font-bold: 'Mug Bold', sans-serif;
+
+    --gradient-primary: linear-gradient(135deg, hsl(214 74% 58%) 0%, hsl(210 84% 69%) 100%);
+    --gradient-secondary: linear-gradient(180deg, hsl(210 22% 96%) 0%, hsl(210 22% 94%) 100%);
+    --gradient-beer: linear-gradient(180deg, hsl(214 80% 68%) 0%, hsl(206 70% 52%) 100%);
+
+    --shadow-brew: 0 14px 26px -18px hsl(214 74% 58% / 0.26);
+    --shadow-foam: 0 8px 18px -12px hsl(214 74% 58% / 0.18);
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 210 24% 96%;
+    --sidebar-foreground: 222 26% 18%;
+    --sidebar-primary: 214 74% 58%;
+    --sidebar-primary-foreground: 222 47% 18%;
+    --sidebar-accent: 210 18% 94%;
+    --sidebar-accent-foreground: 222 26% 18%;
+    --sidebar-border: 214 22% 86%;
+    --sidebar-ring: 214 74% 58%;
+  }
+
+  .dark {
+    --background: 220 16% 11%;
+    --foreground: 210 20% 96%;
+
+    --card: 220 16% 15%;
+    --card-foreground: 210 20% 96%;
+
+    --popover: 220 16% 15%;
+    --popover-foreground: 210 20% 96%;
+
+    --primary: 206 90% 66%;
+    --primary-foreground: 222 47% 12%;
+    --primary-glow: 206 96% 72%;
+    --gradient-primary: linear-gradient(135deg, hsl(206 90% 66%) 0%, hsl(213 84% 74%) 100%);
+    --shadow-brew: 0 16px 40px -18px hsl(206 90% 66% / 0.35);
+    --shadow-foam: 0 10px 24px -12px hsl(206 90% 66% / 0.24);
+
+    --secondary: 220 14% 20%;
+    --secondary-foreground: 210 20% 96%;
+
+    --muted: 220 14% 18%;
+    --muted-foreground: 212 14% 74%;
+
+    --accent: 206 90% 66%;
+    --accent-foreground: 222 47% 12%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 12% 24%;
+    --input: 220 12% 18%;
+    --ring: 206 90% 66%;
+    --sidebar-background: 220 16% 13%;
+    --sidebar-foreground: 210 20% 96%;
+    --sidebar-primary: 206 90% 66%;
+    --sidebar-primary-foreground: 222 47% 12%;
+    --sidebar-accent: 220 14% 20%;
+    --sidebar-accent-foreground: 210 20% 96%;
+    --sidebar-border: 220 12% 24%;
+    --sidebar-ring: 206 90% 66%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    background: hsl(var(--background));
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  .mug-metrics {
+    fill: var(--mug-ink, hsl(var(--mug-type-paper)));
+    stroke: hsl(var(--mug-metric-outline));
+    stroke-width: 3px;
+    stroke-linejoin: round;
+    paint-order: stroke fill;
+    font-family: var(--mug-font-tall);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mug-tall {
+    font-family: var(--mug-font-tall);
+    font-weight: 500;
+  }
+
+  .mug-heading {
+    font-family: var(--mug-font-bold);
+    font-weight: 400;
+    fill: var(--mug-accent, hsl(var(--mug-type-amber)));
+  }
+
+  .mug-gold {
+    fill: var(--mug-accent, hsl(var(--mug-type-gold)));
+  }
+
+  .sidebar,
+  [data-sidebar="sidebar"] {
+    background: linear-gradient(180deg, hsl(var(--sidebar-background)) 0%, hsl(var(--background)) 100%);
+  }
+
+  * {
+    scrollbar-color: rgba(122, 180, 255, 0.7) rgba(15, 23, 42, 0.08);
+  }
+}
