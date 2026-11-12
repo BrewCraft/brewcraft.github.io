@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -66,26 +66,28 @@ export default function RecipesPage() {
             </div>
           );
           return (
-            <Card key={r.id} className="shadow-card hover:shadow-brew transition-shadow cursor-pointer" onClick={() => navigate(`/recipes/${r.id}`)}>
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0"><CardTitle className="text-lg break-words">{r.name}</CardTitle><p className="text-sm text-muted-foreground">{style?.name ?? "Sem estilo"}</p></div>
-                  {actions}
-                </div>
+            <div key={r.id}>
+              <div className="mb-2 flex items-start justify-between gap-2">
+                <div className="min-w-0"><h2 className="text-lg font-semibold break-words">{r.name}</h2><p className="text-sm text-muted-foreground">{style?.name ?? "Sem estilo"}</p></div>
+                {actions}
+              </div>
+              <Card className="shadow-card hover:shadow-brew transition-shadow cursor-pointer overflow-hidden p-2" onClick={() => navigate(`/recipes/${r.id}`)}>
                 <CanecaLimpa
                   color={srmToHex(s.srm)}
                   metrics={{ og: fmt(s.og, 3), fg: fmt(s.fg, 3), abv: `${fmt(s.abv)}%`, ibu: fmt(s.ibu, 0), srm: fmt(s.srm) }}
-                  className={view === "large" ? "mx-auto w-[179.2px] max-w-full h-auto" : "mx-auto w-[134.4px] max-w-full h-auto"}
+                  className={view === "large" ? "mx-auto block w-[179.2px] max-w-full h-auto" : "mx-auto block w-[134.4px] max-w-full h-auto"}
                   role="img"
                   aria-label={`OG ${fmt(s.og, 3)}, FG ${fmt(s.fg, 3)}, ABV ${fmt(s.abv)}%, IBU ${fmt(s.ibu, 0)}, SRM ${fmt(s.srm)}`}
                 />
-              </CardHeader>
-              <CardContent>
-                <div className="flex justify-between text-xs text-muted-foreground"><span>{fmt(r.equipment.batchL)} L</span><Badge variant="secondary">{money(s.cost.total)}</Badge></div>
-              </CardContent>
-            </Card>
+                <div className="mt-2 flex justify-between text-xs text-muted-foreground"><span>{fmt(r.equipment.batchL)} L</span><Badge variant="secondary">{money(s.cost.total)}</Badge></div>
+              </Card>
+            </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
       </div>
     </div>
   );
