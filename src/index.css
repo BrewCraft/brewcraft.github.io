@@ -129,7 +129,7 @@ All colors MUST be HSL.
   }
 
   .mug-metrics {
-    fill: hsl(var(--mug-type-paper));
+    fill: var(--mug-ink, hsl(var(--mug-type-paper)));
     stroke: hsl(var(--mug-metric-outline));
     stroke-width: 3px;
     stroke-linejoin: round;
@@ -146,11 +146,11 @@ All colors MUST be HSL.
   .mug-heading {
     font-family: var(--mug-font-bold);
     font-weight: 400;
-    fill: hsl(var(--mug-type-amber));
+    fill: var(--mug-accent, hsl(var(--mug-type-amber)));
   }
 
   .mug-gold {
-    fill: hsl(var(--mug-type-gold));
+    fill: var(--mug-accent, hsl(var(--mug-type-gold)));
   }
 
   .sidebar,
