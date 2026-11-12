@@ -1,4 +1,4 @@
-import type { SVGProps } from "react";
+import type { CSSProperties, SVGProps } from "react";
 import "@/assets/fonts/mug-fonts.css";
 
 interface CanecaLimpaProps extends SVGProps<SVGSVGElement> {
@@ -6,9 +6,28 @@ interface CanecaLimpaProps extends SVGProps<SVGSVGElement> {
   metrics?: { og: string; fg: string; abv: string; ibu: string; srm: string };
 }
 
-export default function CanecaLimpa({ color, metrics, className, ...props }: CanecaLimpaProps) {
+function beerInk(color: string): CSSProperties {
+  let r: number, g: number, b: number;
+  const hex = /^#?([0-9a-f]{6})$/i.exec(color.trim());
+  const rgb = /^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i.exec(color.trim());
+  if (hex) {
+    const n = parseInt(hex[1], 16);
+    r = (n >> 16) & 255; g = (n >> 8) & 255; b = n & 255;
+  } else if (rgb) {
+    r = Number(rgb[1]); g = Number(rgb[2]); b = Number(rgb[3]);
+  } else {
+    return {};
+  }
+  const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  // Cerveja escura pede letras claras; cerveja clara pede letras escuras.
+  return lum < 0.45
+    ? ({ "--mug-ink": "#f2e3c6", "--mug-accent": "#f0b429" } as CSSProperties)
+    : ({ "--mug-ink": "#2a1503", "--mug-accent": "#8a4b0f" } as CSSProperties);
+}
+
+export default function CanecaLimpa({ color, metrics, className, style, ...props }: CanecaLimpaProps) {
   return (
-<svg {...props} className={className} version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlnsXlink="http://www.w3.org/1999/xlink" x="0px" y="0px" width="1792" viewBox="0 0 1792 2400" enableBackground="new 0 0 1792 2400" xmlSpace="preserve" height="2400">
+<svg {...props} className={className} style={{ ...beerInk(color), ...style }} version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlnsXlink="http://www.w3.org/1999/xlink" x="0px" y="0px" width="1792" viewBox="0 0 1792 2400" enableBackground="new 0 0 1792 2400" xmlSpace="preserve" height="2400">
 <path fill="#282828" opacity="1.000000" stroke="none" d="
 M2.000000,956.000000 
 	C2.000000,637.371155 2.000000,319.742371 2.000000,2.056775 
