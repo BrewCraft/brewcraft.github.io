@@ -144,6 +144,52 @@ export class GeminiService {
     this.ai = new GoogleGenAI({ apiKey });
   }
 
+  private getRequestConfig(signal?: AbortSignal): GenerateContentConfig {
+    return {
+      abortSignal: signal,
+      systemInstruction: SYSTEM_PROMPT,
+      tools: [
+        {
+          googleSearch: {},
+        },
+      ],
+    };
+  }
+
+  private buildContents(messages: Message[], context?: unknown): Content[] {
+    return messages.map((message, index) => {
+      const role = message.role === "system" ? "user" : message.role === "model" ? "model" : "user";
+      const parts: Part[] = [];
+      const isLastMessage = index === messages.length - 1;
+
+      let text = message.content ?? "";
+      if (isLastMessage && context !== undefined && context !== null && message.role === "user") {
+        text += `\n\nContexto do BrewCraft: ${JSON.stringify(context)}`;
+      }
+
+      if (text) {
+        parts.push({ text });
+      }
+
+      if (message.image) {
+        const imageData = message.image.includes(",") ? message.image.split(",")[1] : message.image;
+        const mimeMatch = message.image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
+        const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+        parts.push({
+          inlineData: {
+            mimeType,
+            data: imageData,
+          },
+        });
+      }
+
+      return {
+        role,
+        parts,
+      };
+    });
+  }
+
   private classifyError(error: unknown): GeminiErrorClassification {
     const err = error as any;
     const message = (err.message || "").toUpperCase();

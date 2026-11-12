@@ -39,6 +39,13 @@ All colors MUST be HSL.
     --border: 214 22% 86%;
     --input: 214 22% 90%;
     --ring: 214 74% 58%;
+    --mug-metric-ink: 0 0% 100%;
+    --mug-metric-outline: 0 0% 16%;
+    --mug-type-paper: 42 25% 78%;
+    --mug-type-amber: 37 82% 60%;
+    --mug-type-gold: 47 73% 56%;
+    --mug-font-tall: 'Mug Tall', 'Arial Narrow', sans-serif;
+    --mug-font-bold: 'Mug Bold', sans-serif;
 
     --gradient-primary: linear-gradient(135deg, hsl(214 74% 58%) 0%, hsl(210 84% 69%) 100%);
     --gradient-secondary: linear-gradient(180deg, hsl(210 22% 96%) 0%, hsl(210 22% 94%) 100%);
@@ -119,6 +126,31 @@ All colors MUST be HSL.
 
   #root {
     min-height: 100vh;
+  }
+
+  .mug-metrics {
+    fill: hsl(var(--mug-type-paper));
+    stroke: hsl(var(--mug-metric-outline));
+    stroke-width: 3px;
+    stroke-linejoin: round;
+    paint-order: stroke fill;
+    font-family: var(--mug-font-tall);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mug-tall {
+    font-family: var(--mug-font-tall);
+    font-weight: 500;
+  }
+
+  .mug-heading {
+    font-family: var(--mug-font-bold);
+    font-weight: 400;
+    fill: hsl(var(--mug-type-amber));
+  }
+
+  .mug-gold {
+    fill: hsl(var(--mug-type-gold));
   }
 
   .sidebar,

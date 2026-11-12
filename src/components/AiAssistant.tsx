@@ -18,7 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { GeminiService, type Message, GEMINI_3_LIVE_MODELS, GEMINI_3_FALLBACK_MODELS, DEFAULT_GEMINI_3_MODEL } from "@/lib/gemini";
+import { GeminiService, type Message, GEMINI_3_LIVE_MODELS, DEFAULT_GEMINI_3_MODEL } from "@/lib/gemini";
 import { useGeminiLive } from "@/hooks/use-gemini-live";
 import {
   Tooltip,
@@ -126,7 +126,6 @@ export default function AiAssistant() {
   const [isRecording, setIsRecording] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [retryMessage, setRetryMessage] = useState<{ text: string; image?: string } | null>(null);
-  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_GEMINI_3_MODEL);
   const [actualModelUsed, setActualModelUsed] = useState<string | null>(null);
   const [fallbackOccurred, setFallbackOccurred] = useState(false);
   const [liveModel, setLiveModel] = useState<string>("gemini-3.8-live");
@@ -364,7 +363,7 @@ export default function AiAssistant() {
     setActualModelUsed(null);
 
     try {
-      const gemini = new GeminiService(apiKey, selectedModel);
+      const gemini = new GeminiService(apiKey);
 
       const context = {
         recipeCount: recipes.length,
@@ -749,7 +748,7 @@ export default function AiAssistant() {
                   <TooltipTrigger asChild>
                     <div className="flex items-center gap-1.5 cursor-help">
                       <Badge variant="secondary" className="text-[10px] py-0 h-5 font-normal">
-                        {actualModelUsed || selectedModel}
+                        {actualModelUsed || DEFAULT_GEMINI_3_MODEL}
                       </Badge>
                       {fallbackOccurred && (
                         <Badge variant="outline" className="text-[10px] py-0 h-5 border-amber-500 text-amber-600 bg-amber-50">
@@ -759,24 +758,11 @@ export default function AiAssistant() {
                     </div>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p className="text-xs">Modelo selecionado: {selectedModel}</p>
-                    <p className="text-xs">Modelo em uso: {actualModelUsed || selectedModel}</p>
+                    <p className="text-xs">Modelo em uso: {actualModelUsed || DEFAULT_GEMINI_3_MODEL}</p>
                     {fallbackOccurred && <p className="text-xs text-amber-600 mt-1">O modelo principal atingiu limite de cota.</p>}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-
-              <select 
-                value={selectedModel} 
-                onChange={(e) => setSelectedModel(e.target.value)}
-                className="bg-transparent text-[10px] border rounded px-1 h-5 focus:outline-none"
-              >
-                <optgroup label="Modelos Principais">
-                  {GEMINI_3_FALLBACK_MODELS.map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </optgroup>
-              </select>
             </div>
           </div>
         </div>

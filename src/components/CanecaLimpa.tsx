@@ -1,10 +1,12 @@
 import type { SVGProps } from "react";
+import "@/assets/fonts/mug-fonts.css";
 
 interface CanecaLimpaProps extends SVGProps<SVGSVGElement> {
   color: string;
+  metrics?: { og: string; fg: string; abv: string; ibu: string; srm: string };
 }
 
-export default function CanecaLimpa({ color, className, ...props }: CanecaLimpaProps) {
+export default function CanecaLimpa({ color, metrics, className, ...props }: CanecaLimpaProps) {
   return (
 <svg {...props} className={className} version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlnsXlink="http://www.w3.org/1999/xlink" x="0px" y="0px" width="1792" viewBox="0 0 1792 2400" enableBackground="new 0 0 1792 2400" xmlSpace="preserve" height="2400">
 <path fill="#282828" opacity="1.000000" stroke="none" d="
@@ -1222,6 +1224,18 @@ M1450.371460,1692.259277
 	C1473.493408,1359.333496 1473.746826,1484.660522 1473.645386,1609.987061 
 	C1473.621704,1639.192749 1466.281006,1666.636353 1450.371460,1692.259277 
 z"></path>
+{metrics && (
+  <g className="mug-metrics" textAnchor="middle" fontWeight="700" letterSpacing="0" pointerEvents="none">
+    <text className="mug-heading" x="882" y="1005" fontSize="170">OG / FG</text>
+    <text className="mug-tall" x="882" y="1220" fontSize="195" textLength="680" lengthAdjust="spacingAndGlyphs">{metrics.og} / {metrics.fg}</text>
+    <text className="mug-heading" x="700" y="1445" fontSize="110">ABV</text>
+    <text className="mug-heading" x="700" y="1645" fontSize="180" textLength={metrics.abv.length > 3 ? 300 : undefined} lengthAdjust="spacingAndGlyphs">{metrics.abv}</text>
+    <text className="mug-tall mug-gold" x="1060" y="1445" fontSize="110">IBU</text>
+    <text className="mug-tall mug-gold" x="1060" y="1645" fontSize="190" textLength={metrics.ibu.length > 3 ? 300 : undefined} lengthAdjust="spacingAndGlyphs">{metrics.ibu}</text>
+    <text className="mug-tall" x="882" y="1855" fontSize="100">SRM</text>
+    <text className="mug-tall" x="882" y="2005" fontSize="150" textLength={metrics.srm.length > 5 ? 600 : undefined} lengthAdjust="spacingAndGlyphs">{metrics.srm}</text>
+  </g>
+)}
 </svg>
   );
 }
