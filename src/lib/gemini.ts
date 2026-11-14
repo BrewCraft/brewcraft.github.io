@@ -1,7 +1,7 @@
 import { GoogleGenAI, type Content, type GenerateContentConfig, type Part } from "@google/genai";
 import { type Recipe } from "./recipe-calc";
 
-export const DEFAULT_GEMINI_3_MODEL = "gemini-3.8-flash";
+export const DEFAULT_GEMINI_3_MODEL = "gemini-4-hydrogen";
 
 export const GEMINI_3_LIVE_MODELS = [
   "gemini-3.8-live",
