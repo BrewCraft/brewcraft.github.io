@@ -1,7 +1,7 @@
 import { GoogleGenAI, type Content, type GenerateContentConfig, type Part } from "@google/genai";
 import { type Recipe } from "./recipe-calc";
 
-export const DEFAULT_GEMINI_3_MODEL = "gemini-4-hydrogen";
+export const DEFAULT_GEMINI_3_MODEL = "gemini-3.8-flash";
 
 export const GEMINI_3_LIVE_MODELS = [
   "gemini-3.8-live",
@@ -130,6 +130,64 @@ export interface ChatResponse {
   classification?: GeminiErrorClassification;
 }
 
+// ---- Rate-limit safeguards (shared by every Gemini text request) ----
+export const GEMINI_LIMITS = {
+  maxRequestsPerMinute: 10,
+  minIntervalMs: 3000,
+  maxAttemptsPerMessage: 3,
+  defaultCooldownMs: 60000,
+} as const;
+
+export class GeminiRateLimitError extends Error {
+  waitMs: number;
+  constructor(waitMs: number) {
+    super(`Limite de uso da IA atingido. Aguarde ${Math.max(1, Math.ceil(waitMs / 1000))}s antes de enviar outra mensagem.`);
+    this.name = "GeminiRateLimitError";
+    this.waitMs = waitMs;
+  }
+}
+
+export class RequestLimiter {
+  private stamps: number[] = [];
+  private cooldownUntil = 0;
+  constructor(
+    private maxPerMinute: number = GEMINI_LIMITS.maxRequestsPerMinute,
+    private minIntervalMs: number = GEMINI_LIMITS.minIntervalMs,
+  ) {}
+
+  /** Returns 0 when a request may go out now, otherwise how many ms to wait. */
+  waitTime(now = Date.now()): number {
+    this.stamps = this.stamps.filter((t) => now - t < 60000);
+    let wait = Math.max(0, this.cooldownUntil - now);
+    const last = this.stamps[this.stamps.length - 1];
+    if (last !== undefined) wait = Math.max(wait, last + this.minIntervalMs - now);
+    if (this.stamps.length >= this.maxPerMinute) wait = Math.max(wait, this.stamps[0] + 60000 - now);
+    return wait;
+  }
+
+  /** Reserves a slot or throws GeminiRateLimitError (never waits silently). */
+  acquire(now = Date.now()) {
+    const wait = this.waitTime(now);
+    if (wait > 0) throw new GeminiRateLimitError(wait);
+    this.stamps.push(now);
+  }
+
+  pauseFor(ms: number, now = Date.now()) {
+    this.cooldownUntil = Math.max(this.cooldownUntil, now + ms);
+  }
+}
+
+export const geminiLimiter = new RequestLimiter();
+
+/** Reads the server-suggested retry delay ("retryDelay":"23s" / "retry in 23.5s"). */
+export const parseRetryDelayMs = (error: unknown): number | null => {
+  const err = error as { message?: string; retryAfter?: number };
+  if (typeof err?.retryAfter === "number" && err.retryAfter > 0) return err.retryAfter * 1000;
+  const msg = String(err?.message ?? "");
+  const m = msg.match(/retryDelay"?\s*:\s*"?(\d+(?:\.\d+)?)s/i) || msg.match(/retry in (\d+(?:\.\d+)?)\s*s/i);
+  return m ? Math.ceil(parseFloat(m[1]) * 1000) : null;
+};
+
 // Global registry for model availability to avoid retrying failed models too soon
 const modelBlacklist: Record<string, { until: number; reason: GeminiErrorClassification }> = {};
 
@@ -236,138 +294,83 @@ export class GeminiService {
     };
   }
 
-  async chat(messages: Message[], context?: unknown, signal?: AbortSignal): Promise<ChatResponse> {
+  private modelsToTry() {
     const allModels = [this.modelName, ...GEMINI_3_FALLBACK_MODELS.filter((model) => model !== this.modelName)];
-    const modelsToTry = allModels.filter(m => this.isModelAvailable(m));
-    
-    // If all models are blacklisted, fallback to try the requested one anyway
-    if (modelsToTry.length === 0) modelsToTry.push(this.modelName);
+    const available = allModels.filter((m) => this.isModelAvailable(m));
+    if (available.length === 0) {
+      const soonest = Math.min(...allModels.map((m) => modelBlacklist[m]?.until ?? Date.now()));
+      throw new GeminiRateLimitError(soonest - Date.now());
+    }
+    return available.slice(0, GEMINI_LIMITS.maxAttemptsPerMessage);
+  }
 
+  /** Runs one request with strict limits: at most maxAttemptsPerMessage calls, no hidden loops. */
+  private async run<T>(request: (model: string) => Promise<T>): Promise<{ result: T; modelUsed: string }> {
+    const models = this.modelsToTry();
     let lastError: GeminiError | null = null;
+    let overloadRetried = false;
 
-    for (const modelName of modelsToTry) {
-      let attempts = 0;
-      const maxAttempts = 3;
+    for (let i = 0; i < models.length; i++) {
+      const modelName = models[i];
+      geminiLimiter.acquire();
+      try {
+        return { result: await request(modelName), modelUsed: modelName };
+      } catch (error: unknown) {
+        lastError = error as GeminiError;
+        const classification = this.classifyError(error);
+        lastError.classification = classification;
 
-      while (attempts < maxAttempts) {
-        try {
-          const response = await this.ai.models.generateContent({
-            model: modelName,
-            contents: this.buildContents(messages, context),
-            config: this.getRequestConfig(signal),
-          });
-          
-          return {
-            text: response.text?.trim() || "",
-            modelUsed: modelName,
-            isFallback: modelName !== this.modelName
-          };
-        } catch (error: unknown) {
-          lastError = error as GeminiError;
-          const classification = this.classifyError(error);
-          lastError.classification = classification;
-
-          if (lastError.name === "AbortError" || lastError.message.includes("aborted")) {
-            return { text: "", modelUsed: this.modelName, isFallback: false };
-          }
-
-          if (classification === GeminiErrorClassification.GLOBAL_QUOTA) {
-            throw new Error("Cota global excedida ou problema de faturamento. Verifique o console do Google AI Studio. Mudar de modelo não resolverá.");
-          }
-
-          if (classification === GeminiErrorClassification.AUTH_INVALID) {
-            throw new Error("Chave da API Gemini inválida ou sem autorização.");
-          }
-
-          if (classification === GeminiErrorClassification.SERVICE_OVERLOAD) {
-            attempts++;
-            if (attempts < maxAttempts) {
-              const delay = Math.pow(2, attempts) * 1000;
-              console.warn(`Serviço sobrecarregado (${modelName}), tentando novamente em ${delay}ms...`);
-              await this.wait(delay);
-              continue;
-            }
-          }
-
-          if (classification === GeminiErrorClassification.MODEL_LIMIT) {
-             console.warn(`Modelo ${modelName} atingiu limite específico. Tentando próximo modelo...`);
-             this.markModelUnavailable(modelName, classification, 60000);
-             break; // Try next model in for loop
-          }
-
-          // If it's something else or we exhausted attempts
-          console.error(`Gemini API Error (${modelName}):`, error);
-          if (modelName === modelsToTry[modelsToTry.length - 1]) {
-            throw lastError;
-          }
-          break; // Try next model
+        if (lastError.name === "AbortError" || String(lastError.message).includes("aborted")) throw lastError;
+        if (classification === GeminiErrorClassification.AUTH_INVALID) throw new Error("Chave da API Gemini inválida ou sem autorização.");
+        if (classification === GeminiErrorClassification.GLOBAL_QUOTA) {
+          geminiLimiter.pauseFor(parseRetryDelayMs(error) ?? GEMINI_LIMITS.defaultCooldownMs * 5);
+          throw new Error("Cota do projeto esgotada no Google AI Studio. Trocar de modelo não resolve; aguarde ou verifique o faturamento.");
         }
+        if (classification === GeminiErrorClassification.MODEL_LIMIT) {
+          const delay = parseRetryDelayMs(error) ?? GEMINI_LIMITS.defaultCooldownMs;
+          this.markModelUnavailable(modelName, classification, delay);
+          // short pause so the fallback does not fire in the same instant
+          geminiLimiter.pauseFor(GEMINI_LIMITS.minIntervalMs);
+          if (i === models.length - 1) throw new GeminiRateLimitError(delay);
+          await this.wait(GEMINI_LIMITS.minIntervalMs);
+          continue;
+        }
+        if (classification === GeminiErrorClassification.NOT_FOUND) {
+          // model does not exist for this key: skip it for an hour instead of retrying every message
+          this.markModelUnavailable(modelName, classification, 60 * 60 * 1000);
+          continue;
+        }
+        if (classification === GeminiErrorClassification.SERVICE_OVERLOAD && !overloadRetried) {
+          overloadRetried = true;
+          await this.wait(GEMINI_LIMITS.minIntervalMs);
+          i--; // one single retry on the same model
+          continue;
+        }
+        console.error(`Gemini API Error (${modelName}):`, error);
+        throw lastError;
       }
     }
     throw lastError || new Error("Falha ao comunicar com os modelos Gemini.");
   }
 
-  async chatStream(messages: Message[], context?: unknown, signal?: AbortSignal) {
-    const allModels = [this.modelName, ...GEMINI_3_FALLBACK_MODELS.filter((model) => model !== this.modelName)];
-    const modelsToTry = allModels.filter(m => this.isModelAvailable(m));
-    if (modelsToTry.length === 0) modelsToTry.push(this.modelName);
-
-    let lastError: GeminiError | null = null;
-
-    for (const modelName of modelsToTry) {
-      let attempts = 0;
-      const maxAttempts = 2;
-
-      while (attempts < maxAttempts) {
-        try {
-          const responseStream = await this.ai.models.generateContentStream({
-            model: modelName,
-            contents: this.buildContents(messages, context),
-            config: this.getRequestConfig(signal),
-          });
-
-          return { 
-            stream: responseStream, 
-            modelUsed: modelName, 
-            isFallback: modelName !== this.modelName 
-          };
-        } catch (error: unknown) {
-          lastError = error as GeminiError;
-          const classification = this.classifyError(error);
-          lastError.classification = classification;
-
-          if (lastError.name === "AbortError" || lastError.message.includes("aborted")) {
-            throw lastError;
-          }
-
-          if (classification === GeminiErrorClassification.GLOBAL_QUOTA) {
-            throw new Error("Cota global do projeto esgotada. Verifique seu faturamento no Google Cloud/AI Studio.");
-          }
-
-          if (classification === GeminiErrorClassification.AUTH_INVALID) {
-            throw new Error("Chave da API Gemini inválida.");
-          }
-
-          if (classification === GeminiErrorClassification.SERVICE_OVERLOAD) {
-            attempts++;
-            if (attempts < maxAttempts) {
-              await this.wait(1500 * attempts);
-              continue;
-            }
-          }
-
-          if (classification === GeminiErrorClassification.MODEL_LIMIT) {
-            this.markModelUnavailable(modelName, classification, 45000);
-            break;
-          }
-
-          if (modelName === modelsToTry[modelsToTry.length - 1]) throw lastError;
-          break;
-        }
-      }
+  async chat(messages: Message[], context?: unknown, signal?: AbortSignal): Promise<ChatResponse> {
+    try {
+      const { result, modelUsed } = await this.run((model) =>
+        this.ai.models.generateContent({ model, contents: this.buildContents(messages, context), config: this.getRequestConfig(signal) }),
+      );
+      return { text: result.text?.trim() || "", modelUsed, isFallback: modelUsed !== this.modelName };
+    } catch (error) {
+      const err = error as Error;
+      if (err.name === "AbortError" || String(err.message).includes("aborted")) return { text: "", modelUsed: this.modelName, isFallback: false };
+      throw error;
     }
+  }
 
-    throw lastError || new Error("Todos os modelos Gemini 3 disponíveis falharam");
+  async chatStream(messages: Message[], context?: unknown, signal?: AbortSignal) {
+    const { result, modelUsed } = await this.run((model) =>
+      this.ai.models.generateContentStream({ model, contents: this.buildContents(messages, context), config: this.getRequestConfig(signal) }),
+    );
+    return { stream: result, modelUsed, isFallback: modelUsed !== this.modelName };
   }
 
   // Extract JSON recipe from text response
