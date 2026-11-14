@@ -18,7 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { GeminiService, type Message, GEMINI_3_LIVE_MODELS, DEFAULT_GEMINI_3_MODEL } from "@/lib/gemini";
+import { GeminiService, geminiLimiter, type Message, GEMINI_3_LIVE_MODELS, DEFAULT_GEMINI_3_MODEL } from "@/lib/gemini";
 import { useGeminiLive } from "@/hooks/use-gemini-live";
 import {
   Tooltip,
@@ -134,6 +134,7 @@ export default function AiAssistant() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const sendLockRef = useRef(false);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
   const { toast } = useToast();
   const [recipes, setRecipes] = useRecipes();
@@ -331,9 +332,14 @@ export default function AiAssistant() {
       return;
     }
 
-    if (isLoading) {
-      abortControllerRef.current?.abort();
+    // Safeguard: never fire a second request while one is still running (double clicks / Enter spam)
+    if (isLoading || sendLockRef.current) return;
+    const waitMs = geminiLimiter.waitTime();
+    if (waitMs > 0) {
+      toast({ title: "Aguarde um instante", description: `Para não estourar o limite da IA, envie novamente em ${Math.ceil(waitMs / 1000)}s.` });
+      return;
     }
+    sendLockRef.current = true;
 
     const currentText = input.trim();
     const currentImage = selectedImage || undefined;
@@ -446,6 +452,7 @@ export default function AiAssistant() {
       if (abortControllerRef.current === nextAbortController) {
         abortControllerRef.current = null;
       }
+      sendLockRef.current = false;
       setIsLoading(false);
     }
   };
