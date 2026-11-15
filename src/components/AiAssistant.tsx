@@ -20,6 +20,8 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { GeminiService, geminiLimiter, type Message, GEMINI_3_LIVE_MODELS, DEFAULT_GEMINI_3_MODEL } from "@/lib/gemini";
 import { useGeminiLive } from "@/hooks/use-gemini-live";
+import { buildCopilotContext, proposeRecipeCreate, proposeRecipeUpdate, proposeInventoryAdd, applyProposal, executeCalculator, extractJsonObject, type Proposal } from "@/lib/ai-copilot";
+import { readSettings } from "@/lib/settings";
 import {
   Tooltip,
   TooltipContent,
@@ -36,6 +38,7 @@ import {
 } from "@/lib/cloud-sync";
 import { useInventory, useRecipes, uid } from "@/lib/store";
 import { type Recipe, defaultEquipment, recipeStats, type InventoryItem, type HopUse } from "@/lib/recipe-calc";
+import { fmt } from "@/lib/store";
 import { saveSettings } from "@/lib/settings";
 import geminiLogo from "../../gemini-svg.svg";
 
@@ -129,6 +132,8 @@ export default function AiAssistant() {
   const [actualModelUsed, setActualModelUsed] = useState<string | null>(null);
   const [fallbackOccurred, setFallbackOccurred] = useState(false);
   const [liveModel, setLiveModel] = useState<string>("gemini-3.8-live");
+  const [pendingProposal, setPendingProposal] = useState<Proposal | null>(null);
+  const [proposalError, setProposalError] = useState<string | null>(null);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -371,10 +376,7 @@ export default function AiAssistant() {
     try {
       const gemini = new GeminiService(apiKey);
 
-      const context = {
-        recipeCount: recipes.length,
-        recipes: recipes.map(r => ({ name: r.name, style: r.styleCode })),
-      };
+      const context = buildCopilotContext({ recipes, inventory, settings: readSettings() });
 
       const streamResult = await gemini.chatStream([...messages, userMessage], context, nextAbortController.signal);
       let streamedText = "";
@@ -418,21 +420,35 @@ export default function AiAssistant() {
           return next;
         });
       } else {
-        const action = parseAiAction(finalText);
-        if (action) {
-          applyAiAction(finalText);
-          setMessages((prev) => {
-            const next = [...prev];
-            const lastIndex = next.length - 1;
-            if (next[lastIndex]?.role === "model") {
-              next[lastIndex] = {
-                ...next[lastIndex],
-                content: action.message,
-              };
-            }
-            persistChatHistory(next, currentChatId);
-            return next;
-          });
+        const action = extractJsonObject(finalText);
+        if (action && typeof action.action === "string") {
+          const act = String(action.action).toUpper();
+          if (act === "CALCULATE" || act === "RUN_CALCULATOR") {
+            const calcId = String(action.payload?.calculatorId ?? action.payload?.id ?? action.calculatorId ?? "");
+            const values = (action.payload?.values ?? action.values ?? {}) as Record<string, string>;
+            const res = executeCalculator(calcId, values);
+            const msg = res.ok
+              ? `${action.message || "Cálculo executado pelo BrewCraft."}\n\n**${res.calculator} (função real):**\n` + res.results.map(r => `- ${r.label}: ${fmt(r.value, r.digits ?? 2)} ${r.unit || ""}`).join("\n")
+              : `${action.message || "Falha ao executar cálculo."}\n\nErro: ${res.error}`;
+            setMessages((prev) => {
+              const next = [...prev];
+              const lastIndex = next.length - 1;
+              if (next[lastIndex]?.role === "model") next[lastIndex] = { ...next[lastIndex], content: msg };
+              persistChatHistory(next, currentChatId);
+              return next;
+            });
+          } else {
+            const result = handleAiActionObject(action);
+            setMessages((prev) => {
+              const next = [...prev];
+              const lastIndex = next.length - 1;
+              if (next[lastIndex]?.role === "model") {
+                next[lastIndex] = { ...next[lastIndex], content: result.displayMessage };
+              }
+              persistChatHistory(next, currentChatId);
+              return next;
+            });
+          }
         }
       }
     } catch (error: unknown) {
@@ -474,6 +490,8 @@ export default function AiAssistant() {
     setMessages([]);
     setSelectedImage(null);
     setRetryMessage(null);
+    setPendingProposal(null);
+    setProposalError(null);
     if (activeChatId) {
       setHistory((prev) => {
         const nextHistory = prev.filter((session) => session.id !== activeChatId);
@@ -568,7 +586,7 @@ export default function AiAssistant() {
       name: String(payload.name ?? "Nova Receita IA").trim() || "Nova Receita IA",
       styleCode: String(payload.styleCode ?? payload.style ?? "Sem Estilo").trim(),
       author: String(payload.author ?? "IA Assistant"),
-      notes: String(payload.notes ?? `Receita gerada automaticamente pela IA em ${new Date().toLocaleString("pt-BR")}`),
+      notes: String(payload.notes ?? ""),
       equipment,
       mashSteps: Array.isArray(payload.mashSteps) ? payload.mashSteps.map((step: Record<string, unknown>, index: number) => ({
         name: String(step.name ?? `Etapa ${index + 1}`),
@@ -600,146 +618,75 @@ export default function AiAssistant() {
       abv: computedStats.abv,
       ibu: computedStats.ibu,
       srm: computedStats.srm,
-    };
+    } as Recipe & { og: number; fg: number; abv: number; ibu: number; srm: number };
+  };
+
+  const handleAiActionObject = (action: any): { displayMessage: string } => {
+    try {
+      const kind = String(action?.action ?? "").toUpperCase();
+      const payload = (action?.payload && typeof action.payload === "object") ? action.payload as Record<string, unknown> : {};
+      const baseMsg = typeof action?.message === "string" ? action.message : "Proposta gerada pela IA.";
+      const settings = readSettings();
+
+      if (kind === "PROPOSE_CREATE_RECIPE" || kind === "CREATE_RECIPE") {
+        const p = proposeRecipeCreate(payload.recipe && typeof payload.recipe === "object" ? payload.recipe as Record<string, unknown> : payload, { settings, inventory });
+        if (!p.ok) { setPendingProposal(null); setProposalError(p.error); return { displayMessage: `${baseMsg}\n\n⚠️ Não foi possível preparar a proposta: ${p.error}${p.missingInfo?.length ? `\nFaltam: ${p.missingInfo.join(", ")}.` : ""}\nResponda com as informações necessárias para eu montar a proposta.` }; }
+        setPendingProposal(p.proposal); setProposalError(null);
+        return { displayMessage: `${baseMsg}\n\n📋 Proposta pronta para confirmação (nenhuma alteração aplicada ainda). Revise antes/depois e aprove ou rejeite abaixo.` };
+      }
+      if (kind === "PROPOSE_UPDATE_RECIPE" || kind === "UPDATE_RECIPE") {
+        const p = proposeRecipeUpdate(payload.recipe && typeof payload.recipe === "object" ? payload.recipe as Record<string, unknown> : payload, recipes, { settings, inventory });
+        if (!p.ok) { setPendingProposal(null); setProposalError(p.error); return { displayMessage: `${baseMsg}\n\n⚠️ Não foi possível preparar a alteração: ${p.error}${p.missingInfo?.length ? `\nFaltam: ${p.missingInfo.join(", ")}.` : ""}` }; }
+        setPendingProposal(p.proposal); setProposalError(null);
+        return { displayMessage: `${baseMsg}\n\n📋 Alteração proposta (não aplicada). Revise antes/depois e confirme para aplicar.` };
+      }
+      if (kind === "PROPOSE_ADD_INVENTORY" || kind === "ADD_INVENTORY") {
+        const p = proposeInventoryAdd(payload, inventory);
+        if (!p.ok) { setPendingProposal(null); setProposalError(p.error); return { displayMessage: `${baseMsg}\n\n⚠️ Não foi possível preparar a alteração de inventário: ${p.error}${p.missingInfo?.length ? `\nFaltam: ${p.missingInfo.join(", ")}.` : ""}` }; }
+        setPendingProposal(p.proposal); setProposalError(null);
+        return { displayMessage: `${baseMsg}\n\n📋 Alteração de inventário proposta (não aplicada). Confirme para aplicar.` };
+      }
+      if (kind === "UPDATE_SETTING") {
+        try { saveSettings(payload as Record<string, unknown>); return { displayMessage: baseMsg || "Configurações atualizadas." }; }
+        catch (e) { return { displayMessage: `Falha ao atualizar configurações: ${e instanceof Error ? e.message : "erro desconhecido"}` }; }
+      }
+      return { displayMessage: baseMsg };
+    } catch (e) {
+      const err = e instanceof Error ? e.message : "erro ao processar ação";
+      setProposalError(err);
+      return { displayMessage: `Não foi possível processar a ação da IA: ${err}` };
+    }
+  };
+
+  const approveProposal = () => {
+    if (!pendingProposal) return;
+    const result = applyProposal(pendingProposal, { recipes, inventory });
+    if (!result.ok) {
+      toast({ title: "Operação não aplicada", description: result.error, variant: "destructive" });
+      const msg: Message = { role: "model", content: `❌ Alteração não aplicada: ${result.error}` };
+      const next = [...messages, msg]; setMessages(next); persistChatHistory(next, activeChatId ?? undefined);
+      return;
+    }
+    if (pendingProposal.kind === "CREATE_RECIPE" || pendingProposal.kind === "UPDATE_RECIPE") setRecipes(result.recipes);
+    if (pendingProposal.kind === "ADD_INVENTORY") setInventory(result.inventory);
+    const msg: Message = { role: "model", content: `✅ ${result.message} (aplicado após sua confirmação).` };
+    const next = [...messages, msg]; setMessages(next); persistChatHistory(next, activeChatId ?? undefined);
+    toast({ title: "Alteração aplicada", description: result.message });
+    setPendingProposal(null); setProposalError(null);
+  };
+
+  const rejectProposal = () => {
+    if (!pendingProposal) return;
+    const msg: Message = { role: "model", content: "Proposta rejeitada. Nenhuma alteração foi aplicada." };
+    const next = [...messages, msg]; setMessages(next); persistChatHistory(next, activeChatId ?? undefined);
+    setPendingProposal(null); setProposalError(null);
   };
 
   const applyAiAction = (content: string) => {
-    try {
-      const action = parseAiAction(content);
-      if (!action) return false;
-
-      const parsedData = action;
-      console.log("Ação interceptada:", parsedData);
-
-      switch (action.action) {
-        case "ADD_INVENTORY": {
-          const rawItem = (action.payload?.item ?? action.payload) as Record<string, unknown> | undefined;
-          if (!rawItem || typeof rawItem !== "object") {
-            throw new Error("Payload de inventário inválido: objeto ausente.");
-          }
-
-          const normalizedType = String(rawItem.type ?? rawItem.kind ?? "Misc").trim();
-          const typeMap: Record<string, InventoryItem["kind"]> = {
-            Fermentable: "fermentavel",
-            fermentable: "fermentavel",
-            Hop: "lupulo",
-            hop: "lupulo",
-            Yeast: "levedura",
-            yeast: "levedura",
-            Misc: "outro",
-            misc: "outro",
-          };
-
-          const kind = typeMap[normalizedType] ?? "outro";
-          const amountRaw = Number(rawItem.amount ?? 0);
-          const amount = Number.isFinite(amountRaw) ? amountRaw : 0;
-          const name = String(rawItem.name ?? "").trim() || "Item IA";
-
-          const validInventoryUnits = new Set(["kg", "g", "L", "ml", "un"]);
-          const requestedUnit = String(rawItem.unit ?? "").trim();
-          const normalizedUnit = validInventoryUnits.has(requestedUnit) ? requestedUnit : (() => {
-            if (kind === "fermentavel") return "kg";
-            if (kind === "lupulo") return "g";
-            if (kind === "levedura") return "un";
-            return "un";
-          })();
-
-          const item: InventoryItem = {
-            id: typeof rawItem.id === "string" && rawItem.id.trim()
-              ? rawItem.id.trim()
-              : (typeof globalThis.crypto !== "undefined" && "randomUUID" in globalThis.crypto
-                ? globalThis.crypto.randomUUID()
-                : Date.now().toString()),
-            kind,
-            name,
-            amount,
-            unit: kind === "levedura" ? "pacote" : normalizedUnit,
-            price: Number(rawItem.price ?? 0),
-            minAmount: Number(rawItem.minAmount ?? 0),
-            alpha: rawItem.alpha !== undefined && rawItem.alpha !== null ? Number(rawItem.alpha) : undefined,
-            potential: rawItem.potential !== undefined && rawItem.potential !== null ? Number(rawItem.potential) : undefined,
-            color: rawItem.color !== undefined && rawItem.color !== null ? Number(rawItem.color) : undefined,
-            attenuation: rawItem.attenuation !== undefined && rawItem.attenuation !== null ? Number(rawItem.attenuation) : undefined,
-          };
-
-          if (!item.name) {
-            throw new Error("Inventário IA: o nome do item não pode ficar vazio.");
-          }
-
-          const existingItem = inventory.find((current) =>
-            current.kind === item.kind && current.name.toLowerCase() === item.name.toLowerCase(),
-          );
-
-          const nextInventory = existingItem
-            ? inventory.map((current) => current.id === existingItem.id
-              ? { ...current, ...item, amount: Number(current.amount) + Number(item.amount) }
-              : current)
-            : [item, ...inventory];
-
-          setInventory(nextInventory);
-          return true;
-        }
-        case "CREATE_RECIPE": {
-          const recipeData = (action.payload?.recipe ?? action.payload) as Partial<Recipe> & Record<string, unknown> | undefined;
-          const newRecipe = normalizeAiRecipe(recipeData);
-
-          // Check if recipe with same name exists recently to avoid duplicates on fallback retries
-          const exists = recipes.some(r => r.name === newRecipe.name && (Date.now() - new Date(r.createdAt).getTime() < 30000));
-          if (!exists) {
-             setRecipes([...recipes, newRecipe as Recipe]);
-          }
-          return true;
-        }
-        case "UPDATE_RECIPE": {
-          const payload = action.payload as Partial<Recipe> & Record<string, unknown>;
-
-          if (!payload.id) {
-            throw new Error("Payload de atualização de receita inválido: id ausente.");
-          }
-
-          const currentRecipes = recipes;
-          const previousRecipe = currentRecipes.find((recipe) => recipe.id === payload.id);
-
-          if (!previousRecipe) {
-            throw new Error("Receita para atualização não encontrada.");
-          }
-
-          const mergedRecipe = {
-            ...previousRecipe,
-            ...payload,
-            id: payload.id,
-            updatedAt: new Date().toISOString(),
-          } as Recipe;
-
-          const computedStats = recipeStats(mergedRecipe);
-          const receitaAtualizadaCalculada = {
-            ...mergedRecipe,
-            og: computedStats.og,
-            fg: computedStats.fg,
-            abv: computedStats.abv,
-            ibu: computedStats.ibu,
-            srm: computedStats.srm,
-          } as Recipe;
-
-          const updatedRecipes = currentRecipes.map((recipe) => recipe.id === payload.id ? receitaAtualizadaCalculada : recipe);
-          
-          // Only update if something actually changed to avoid redundant updates on retries
-          if (JSON.stringify(previousRecipe) !== JSON.stringify(receitaAtualizadaCalculada)) {
-            setRecipes(updatedRecipes);
-          }
-          return true;
-        }
-        case "UPDATE_SETTING": {
-          saveSettings(action.payload as Record<string, unknown>);
-          return true;
-        }
-        default:
-          return false;
-      }
-    } catch (error) {
-      console.error("Failed to apply AI action", error);
-      return false;
-    }
+    const obj = extractJsonObject(content);
+    if (!obj) return false;
+    handleAiActionObject(obj);
+    return true;
   };
 
   return (
@@ -968,6 +915,65 @@ export default function AiAssistant() {
               </div>
             )}
           </ScrollArea>
+
+          {(pendingProposal || proposalError) && (
+            <div className="border-t p-4 bg-amber-50/70 dark:bg-amber-950/20 space-y-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="font-semibold text-sm">Confirmação necessária (nenhuma alteração aplicada automaticamente)</p>
+                {pendingProposal && <Badge variant="outline">{pendingProposal.kind === "CREATE_RECIPE" ? "Criar receita" : pendingProposal.kind === "UPDATE_RECIPE" ? "Editar receita" : "Alterar inventário"}</Badge>}
+              </div>
+              {proposalError && <p className="text-sm text-destructive">{proposalError}</p>}
+              {pendingProposal && (
+                <div className="space-y-3 text-sm">
+                  <div>
+                    <p className="font-medium">Ingredientes/itens afetados</p>
+                    <p className="text-muted-foreground">{pendingProposal.affectedIngredients.length ? pendingProposal.affectedIngredients.join(", ") : "—"}</p>
+                  </div>
+                  {pendingProposal.kind !== "ADD_INVENTORY" && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs border border-border rounded-md">
+                        <thead className="bg-muted/50"><tr><th className="text-left p-2">Métrica</th><th className="text-left p-2">Antes</th><th className="text-left p-2">Depois</th></tr></thead>
+                        <tbody>
+                          {([
+                            ["Receita", (pendingProposal as any).before?.name || "—", (pendingProposal as any).after.name],
+                            ["OG", (pendingProposal as any).before ? fmt((pendingProposal as any).before.results.og,3) : "—", fmt((pendingProposal as any).after.results.og,3)],
+                            ["FG", (pendingProposal as any).before ? fmt((pendingProposal as any).before.results.fg,3) : "—", fmt((pendingProposal as any).after.results.fg,3)],
+                            ["ABV", (pendingProposal as any).before ? `${fmt((pendingProposal as any).before.results.abv)}%` : "—", `${fmt((pendingProposal as any).after.results.abv)}%`],
+                            ["IBU", (pendingProposal as any).before ? fmt((pendingProposal as any).before.results.ibu,1) : "—", fmt((pendingProposal as any).after.results.ibu,1)],
+                            ["EBC/SRM", (pendingProposal as any).before ? `${fmt((pendingProposal as any).before.results.ebc,1)} / ${fmt((pendingProposal as any).before.results.srm,1)}` : "—", `${fmt((pendingProposal as any).after.results.ebc,1)} / ${fmt((pendingProposal as any).after.results.srm,1)}`],
+                            ["Volume (L)", (pendingProposal as any).before ? String((pendingProposal as any).before.batchSizeL) : "—", String((pendingProposal as any).after.batchSizeL)],
+                            ["Eficiência", (pendingProposal as any).before ? `${(pendingProposal as any).before.efficiency}%` : "—", `${(pendingProposal as any).after.efficiency}%`],
+                          ] as [string,string,string][]).map(([k,a,b]) => (<tr key={k} className="border-t border-border"><td className="p-2 font-medium">{k}</td><td className="p-2">{a}</td><td className="p-2">{b}</td></tr>))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {pendingProposal.kind !== "ADD_INVENTORY" && (
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <p><b>Fermentáveis:</b> {(pendingProposal as any).after.fermentables.map((f:any)=>`${f.kg} kg ${f.name}`).join("; ") || "—"}</p>
+                      <p><b>Lúpulos:</b> {(pendingProposal as any).after.hops.map((h:any)=>`${h.grams} g ${h.name} (${h.use}${h.minutes?` ${h.minutes}min`:''})`).join("; ") || "—"}</p>
+                      <p><b>Leveduras:</b> {(pendingProposal as any).after.yeasts.map((y:any)=>`${y.packs}x ${y.name}`).join("; ") || "—"}</p>
+                      {(pendingProposal as any).after.miscs?.length ? <p><b>Outros:</b> {(pendingProposal as any).after.miscs.map((m:any)=>`${m.amount} ${m.unit} ${m.name}`).join("; ")}</p> : null}
+                    </div>
+                  )}
+                  {pendingProposal.kind === "ADD_INVENTORY" && (
+                    <div className="text-xs space-y-1">
+                      <p><b>Antes:</b> {(pendingProposal as any).before ? `${(pendingProposal as any).before.amount} ${(pendingProposal as any).before.unit} ${(pendingProposal as any).before.name}` : "Item novo"}</p>
+                      <p><b>Depois:</b> {(pendingProposal as any).after.amount} {(pendingProposal as any).after.unit} {(pendingProposal as any).after.name}</p>
+                    </div>
+                  )}
+                  {((pendingProposal as any).inventoryCheck?.some((x:any)=>x.missing>0)) && (
+                    <div className="text-xs text-amber-700 dark:text-amber-300"><b>Faltas no estoque (respeitando quantidades disponíveis):</b> {(pendingProposal as any).inventoryCheck.filter((x:any)=>x.missing>0).map((x:any)=>`${x.name}: faltam ${fmt(x.missing,2)} ${x.unit}`).join("; ")}</div>
+                  )}
+                  {pendingProposal.warnings?.length ? <div className="text-xs text-amber-700">Avisos: {pendingProposal.warnings.join("; ")}</div> : null}
+                  <div className="flex gap-2 flex-wrap">
+                    <Button size="sm" onClick={approveProposal}>Aprovar e aplicar</Button>
+                    <Button size="sm" variant="outline" onClick={rejectProposal}>Rejeitar</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <form onSubmit={handleSend} className="p-4 bg-white dark:bg-slate-800 border-t">
             {selectedImage && (

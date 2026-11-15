@@ -1,5 +1,5 @@
 /** Pure recipe, water, inventory and report calculations. Units: kg, g, L, °C, SG. */
-import { alcohol, ibuTinseth } from "./brewing";
+import { alcohol, ibuRager, ibuTinseth } from "./brewing";
 import { calculateAbv, defaultSettings, type AppSettings } from "./settings-model";
 import type { BjcpStyle } from "./catalog";
 
@@ -50,8 +50,7 @@ export function recipeIbu(hops: RecipeHop[], og: number, eq: Equipment, formula:
     const minutes = h.use === "primeiro_mosto" ? eq.boilMinutes + 20 : h.use === "whirlpool" ? Math.min(h.minutes, 30) * 0.5 : h.minutes;
     if (vol <= 0) return sum;
     if (formula === "rager") {
-      const utilization = (18.11 + 13.86 * Math.tanh((minutes - 31.32) / 18.27)) / 100;
-      return sum + utilization * h.grams * h.alpha * 10 / (vol * (1 + Math.max(0, (og - 1.05) / 0.2)));
+      return sum + ibuRager(h.grams, h.alpha, minutes, vol, og);
     }
     return sum + ibuTinseth(h.grams, h.alpha, minutes, vol, og);
   }, 0);
@@ -107,48 +106,35 @@ export function srmToHex(srm: number) {
 }
 
 // ---------- Water chemistry ----------
-export type Ion = "ca" | "mg" | "na" | "so4" | "cl" | "hco3";
-export type WaterProfile = Record<Ion, number>;
-export const ions: { id: Ion; label: string }[] = [
-  { id: "ca", label: "Cálcio (Ca)" }, { id: "mg", label: "Magnésio (Mg)" }, { id: "na", label: "Sódio (Na)" },
-  { id: "so4", label: "Sulfato (SO₄)" }, { id: "cl", label: "Cloreto (Cl)" }, { id: "hco3", label: "Bicarbonato (HCO₃)" },
-];
-/** ppm contributed by 1 g of salt in 1 L. */
-export const salts: { id: string; label: string; ppm: Partial<WaterProfile> }[] = [
-  { id: "gypsum", label: "Gipsita (CaSO₄·2H₂O)", ppm: { ca: 232.8, so4: 557.9 } },
-  { id: "cacl2", label: "Cloreto de Cálcio (CaCl₂·2H₂O)", ppm: { ca: 272.6, cl: 482.3 } },
-  { id: "epsom", label: "Sal Amargo (MgSO₄·7H₂O)", ppm: { mg: 98.6, so4: 389.6 } },
-  { id: "nacl", label: "Sal de Cozinha (NaCl)", ppm: { na: 393.4, cl: 606.6 } },
-  { id: "bicarb", label: "Bicarbonato de Sódio (NaHCO₃)", ppm: { na: 273.7, hco3: 726.4 } },
-  { id: "chalk", label: "Giz (CaCO₃)", ppm: { ca: 400.4, hco3: 1219.2 } },
-];
+export {
+  type Ion,
+  type WaterProfile,
+  ions,
+  saltsCatalog,
+  zeroProfile,
+  waterPresets,
+  applySalts,
+  totalAlkalinity,
+  residualAlkalinity,
+  sulfateChlorideRatio,
+  ratioDescription,
+  calculateWaterSplit,
+  type WaterVolumes,
+  type SplitSaltResult,
+  optimizeSalts,
+  type OptimizerReport,
+  estimateMashPh,
+  type GrainAddition,
+  type AcidAddition,
+  type MashPhEstimate,
+} from "./water-calc";
+import { optimizeSalts, saltsCatalog, type WaterProfile } from "./water-calc";
 
-export function applySalts(source: WaterProfile, additionsG: Record<string, number>, liters: number): WaterProfile {
-  const out = { ...source };
-  if (liters <= 0) return out;
-  for (const s of salts) {
-    const g = additionsG[s.id] || 0;
-    for (const [ion, ppm] of Object.entries(s.ppm) as [Ion, number][]) out[ion] += g * ppm / liters;
-  }
-  return out;
-}
+export const salts = saltsCatalog.map(s => ({ id: s.id, label: s.name, ppm: s.ppm }));
 
-/** Greedy non-negative salt suggestion to approach a target profile using gypsum, CaCl₂, Epsom and NaCl. */
 export function suggestSalts(source: WaterProfile, target: WaterProfile, liters: number) {
-  const g = (deficit: number, ppm: number) => Math.max(0, deficit) * liters / ppm;
-  const add: Record<string, number> = {};
-  add.epsom = g(target.mg - source.mg, 98.6);
-  let cur = applySalts(source, add, liters);
-  add.gypsum = g(target.so4 - cur.so4, 557.9);
-  cur = applySalts(source, add, liters);
-  add.cacl2 = g(target.cl - cur.cl, 482.3);
-  cur = applySalts(source, add, liters);
-  add.nacl = g(target.na - cur.na, 393.4);
-  for (const k of Object.keys(add)) add[k] = Math.round(add[k] * 10) / 10;
-  return add;
+  return optimizeSalts(source, target, liters).additions;
 }
-
-export const sulfateChlorideRatio = (w: WaterProfile) => (w.cl > 0 ? w.so4 / w.cl : 0);
 
 // ---------- Inventory ----------
 export type InventoryKind = "fermentavel" | "lupulo" | "levedura" | "outro";

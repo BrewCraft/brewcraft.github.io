@@ -217,7 +217,7 @@ export default function RecipeFormPage() {
               <Button variant="ghost" size="icon" aria-label="Remover" onClick={() => removeFrom("hops", i)}><Trash2 className="h-4 w-4" /></Button>
               {cat && (
                 <div className="col-span-2 sm:col-span-full text-xs text-muted-foreground">
-                  <b className="text-foreground">Substitutos:</b> {cat.substitutes.join(", ")} · <b className="text-foreground">Perfil:</b> {cat.profile}
+                  <b className="text-foreground">Substitutos:</b> {(cat.substitutes ?? []).join(", ") || "desconhecidos"} · <b className="text-foreground">Perfil:</b> {cat.profile}{cat.beta !== undefined ? <> · <b className="text-foreground">β:</b> {cat.beta}%</> : null}{cat.source ? <> · <b className="text-foreground">Fonte:</b> {cat.source === "official" ? "oficial" : cat.source === "estimate" ? "estimativa" : cat.source}</> : null}
                 </div>
               )}
             </div>

@@ -1,0 +1,601 @@
+Ran list files in src/lib
+Ran list files in src/components
+Analyzed package.json:L1-87
+Ran check bun availability
+Ran check node and npm version
+Analyzed brewing.test.ts:L1-29
+Ran run brewing test with node strip types · Exited with code 1
+Ran list node_modules/.bin
+Ran check if bun is in ~/.bun/bin
+Ran run brewing.test.ts with jiti · Exited with code 1
+Canceled check npx tsx
+Killed task Check npx tsx
+Ran check strip-types options
+Ran check node process versions
+Ran check node loader options
+Ran check transform-types help
+Canceled find bun binary on machine
+Killed task Find bun binary on machine
+Ran find bun in /home/claudemir
+Ran test node loader for extensionless TS imports
+Ran test recipe-calc.test.ts · Exited with code 1
+Analyzed recipe-calc.test.ts:L1-23
+Analyzed gemini-limits.test.ts:L1-22
+Analyzed brewing.ts:L1-59
+Analyzed calculator-registry.ts:L1-47
+Analyzed CalculatorsPage.tsx:L1-95
+Analyzed recipe-calc.ts:L1-100
+Analyzed recipe-calc.ts:L101-247
+Analyzed settings-model.ts:L1-86
+Ran grep for calculate across src/
+Analyzed WaterPage.tsx:L1-60
+Ran grep usages of brewing functions
+Ran search git log for efficiency
+Ran search git log for calculators
+Searched "Sean Terrill" refractometer calculator formula "0.00085683" OR "0.004493"
+Ran check hydrometer factors
+Searched "1.00130346" "0.000134722124" hydrometer temperature correction
+Searched "-16.6999" "0.00116512" carbonation psi formula
+Created test-loader.mjs
+Ran test node with test-loader.mjs · Exited with code 1
+Analyzed gemini.ts:L105-125
+Ran grep GeminiErrorClassification
+Edited gemini.ts
+Ran run gemini-limits.test.ts · Exited with code 1
+Ran test with --experimental-transform-types
+Analyzed recipe-calc.test.ts:L1-23
+Edited recipe-calc.test.ts
+Ran run recipe-calc.test.ts
+Created test-register.mjs
+Ran test all test files with modern node import
+Analyzed brewing.ts:L1-59
+Edited brewing.ts
+Analyzed recipe-calc.ts:L45-60
+Edited recipe-calc.ts
+Edited recipe-calc.ts
+Analyzed calculator-registry.ts:L1-47
+Edited calculator-registry.ts
+Analyzed package.json:L6-16
+Edited package.json
+Ran run npm test · Exited with code 1
+Analyzed brewing.test.ts:L1-29
+Ran check reference calculations
+Edited brewing.test.ts
+Ran run npm test
+Ran typeScript check
+Checked task TypeScript check
+Checked task TypeScript check
+Ran run npm run build
+Checked task Run npm run build
+Ran run lint · Exited with code 1
+Analyzed gemini.ts:L245-260
+Edited gemini.ts
+Analyzed use-gemini-live.ts:L90-110
+Analyzed use-gemini-live.ts:L195-215
+Edited use-gemini-live.ts
+Ran run lint check
+Ran run npm test
+Ran run standalone build
+Checked task Run standalone build
+Ran check git status
+Ran check untracked files
+Ran check git diff package.json
+Ran review git diff brewing.ts
+Ran check git diff gemini.ts
+Ran check git diff use-gemini-live.ts
+
+# Relatório Técnico de Auditoria e Correção das Calculadoras do BrewCraft
+
+Foi realizada uma auditoria matemática e de engenharia de software em **todas as calculadoras** do BrewCraft, analisando o módulo de cálculo puro ([`src/lib/brewing.ts`](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/src/lib/brewing.ts)), o registro tipado ([`src/lib/calculator-registry.ts`](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/src/lib/calculator-registry.ts)), o módulo de receitas ([`src/lib/recipe-calc.ts`](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/src/lib/recipe-calc.ts)) e a interface ([`src/components/CalculatorsPage.tsx`](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/src/components/CalculatorsPage.tsx)).
+
+---
+
+## 1. Estrutura Arquitetural do Sistema
+
+- **Fórmulas Puras:** [`src/lib/brewing.ts`](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/src/lib/brewing.ts) — Funções numéricas sem dependência de DOM ou React.
+- **Registro de Calculadoras:** [`src/lib/calculator-registry.ts`](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/src/lib/calculator-registry.ts) — Definição dos campos de formulário, limites mínimos/máximos, valores padrão, validações e saída dos resultados.
+- **Interface Visual:** [`src/components/CalculatorsPage.tsx`](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/src/components/CalculatorsPage.tsx) — Renderização responsiva com busca, favoritos, validação em tempo real e acessibilidade.
+- **Módulo de Receitas e Química de Água:** [`src/lib/recipe-calc.ts`](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/src/lib/recipe-calc.ts) — Perfis de água, sais, equipamentos, inventário e estatísticas integradas.
+
+---
+
+## 2. Calculadoras Analisadas (23 Calculadoras)
+
+| ID | Nome no BrewCraft | Grupo | Status da Auditoria |
+|---|---|---|---|
+| `alcohol` | Álcool / Atenuação / Calorias | Geral | ⚠️ Corrigida e expandida (ABW + Hall) |
+| `efficiency` | Eficiência de Brassagem | Geral | ✨ Adicionada nova calculadora |
+| `ogfg` | Estimativa de OG e FG | Geral | ✨ Adicionada nova calculadora |
+| `ibu` | Amargor / IBU (Tinseth e Rager) | Geral | ⚠️ Expandida (adicionado Jackie Rager) |
+| `brix` | Refratômetro / Brix | Geral | ⚠️ Validada e protegida contra divisão zero |
+| `hydrometer` | Correção de Temperatura do Densímetro | Geral | ⚠️ Protegida para densidades nulas/negativas |
+| `evaporation` | Correção da Densidade / Evaporação | Geral | ⚠️ Protegida contra divisão zero e tempos nulos |
+| `carbonation` | Carbonatação e Priming | Geral | ⚠️ Expandida (g/L adicionado, pressão protegida) |
+| `hops` | Frescor do Lúpulo | Geral | ⚠️ Protegida contra perda $\ge 100\%$ e log negativo |
+| `scale` | Conversão de Brassagem (Escala) | Geral | ⚠️ Validação de volumes e eficiência nulos |
+| `gravity` | Conversão de Gravidade (SG/°P/GU) | Geral | ⚠️ Limites de entrada protegidos |
+| `color` | Conversão de Cor (SRM/EBC/°L) | Geral | ⚠️ Preservação exata da unidade de entrada |
+| `units` | Conversão de unidade (Geral) | Geral | ✅ Validada |
+| `volume` | Conversão de volumes | Geral | ✅ Validada |
+| `weight` | Conversão de peso | Geral | ✅ Validada |
+| `temperature` | Conversão de Temperatura | Geral | ✅ Validada |
+| `pressure` | Conversão de pressão | Geral | ✅ Validada |
+| `strike` | Temperatura da Água de Ataque | Mostura | ⚠️ Protegida contra volume de água nulo |
+| `rest` | Temperatura de Repouso (Infusão) | Mostura | ⚠️ Protegida contra divisão zero no malte |
+| `tun` | Calibração da Panela de Mostura | Mostura | ⚠️ Protegida contra temperaturas invertidas |
+| `srm` | Cor da receita / SRM (Morey) | Geral | ⚠️ Protegida contra volume nulo |
+| `water` | Química da água (Sais e Íons) | Geral | ⚠️ Balanço de íons verificado e testado |
+
+---
+
+## 3. Fórmulas Verificadas e Fontes Técnicas
+
+1. **Gravidade Específica $\leftrightarrow$ Graus Plato (°P):**
+   - Polinômio de Lincoln / ASBC:
+     $$\text{°P} = -616{,}868 + 1111{,}14 \times SG - 630{,}272 \times SG^2 + 135{,}997 \times SG^3$$
+     Inversão ASBC / De Clerck:
+     $$SG = 1 + \frac{P}{258{,}6 - \left(\frac{P}{258{,}2}\right) \times 227{,}1}$$
+2. **Teor Alcoólico (ABV, ABW e Calorias):**
+   - ABV Padrão: $(OG - FG) \times 131{,}25$ (Miller / Papazian / Palmer).
+   - ABV Avançado de Hall (para alta densidade $> 6\%$ ABV):
+     $$ABV_{\text{alt}} = \frac{76{,}08 \times (OG - FG)}{1{,}775 - OG} \times \frac{FG}{0{,}794}$$
+   - Relação de Balling para Extrato Real ($RE$) e Álcool por Peso ($ABW$):
+     $$RE = 0{,}1808 \times OE + 0{,}8192 \times AE$$
+     $$ABW = \frac{OE - RE}{2{,}0664 - 0{,}010664 \times OE}$$
+   - Calorias (Método ASBC Beer-33 / USDA por porção de $V$ mL):
+     $$\text{kcal} = \frac{\left(6{,}9 \times ABW + 4{,}0 \times \max(0, RE - 0{,}1)\right) \times FG \times V}{100}$$
+3. **Refratômetro para Mosto Fermentado:**
+   - Modelo linear de Sean Terrill:
+     $$FG = 1{,}0000 - 0{,}00085683 \times \frac{OB}{WCF} + 0{,}0034941 \times \frac{FB}{WCF}$$
+4. **Correção de Temperatura do Densímetro:**
+   - Polinômio de expansão térmica da água ($T$ em °F, referência 20 °C / 68 °F):
+     $$f(T) = 1{,}00130346 - 1{,}34722124 \times 10^{-4} T + 2{,}04052596 \times 10^{-6} T^2 - 2{,}32820948 \times 10^{-9} T^3$$
+     $$SG_{\text{corrigido}} = SG_{\text{lido}} \times \frac{f(T_{\text{amostra}})}{f(T_{\text{calibração}})}$$
+5. **Amargor IBU (Tinseth e Rager):**
+   - **Tinseth:**
+     $$U(t, SG) = 1{,}65 \times 0{,}000125^{SG - 1} \times \frac{1 - e^{-0{,}04 \times t}}{4{,}15}$$
+     $$IBU_{\text{Tinseth}} = U(t, SG) \times \frac{g \times \alpha\% \times 10}{V}$$
+   - **Rager:**
+     $$\text{Utilização} = \frac{18{,}11 + 13{,}86 \times \tanh\left(\frac{t - 31{,}32}{18{,}27}\right)}{100}$$
+     $$GA = \text{se } SG > 1{,}050 \implies \frac{SG - 1{,}050}{0{,}2} \text{ senão } 0$$
+     $$IBU_{\text{Rager}} = \frac{\text{Utilização} \times g \times \alpha\% \times 10}{V \times (1 + GA)}$$
+6. **Cor da Cerveja (Morey, SRM, EBC, Lovibond):**
+   - MCU e Morey:
+     $$MCU = \frac{\sum (M_{\text{lb}} \times \text{°L})}{V_{\text{gal}}}$$
+     $$SRM = 1{,}4922 \times MCU^{0{,}6859}$$
+   - Conversões internacionais:
+     $$EBC = 1{,}97 \times SRM \qquad \text{°L} = \frac{SRM + 0{,}76}{1{,}3546}$$
+7. **Eficiência de Brassagem:**
+   $$\text{Pontos Reais} = (OG - 1) \times 1000 \times V_{\text{fermentador}}$$
+   $$\text{Pontos Teóricos} = (\text{Potencial} - 1) \times 1000 \times 8{,}3454 \times M_{\text{malte}}$$
+   $$\text{Eficiência \%} = \frac{\text{Pontos Reais}}{\text{Pontos Teóricos}} \times 100$$
+8. **Balanço Térmico de Mostura (Água de Ataque e Infusão):**
+   - Calor específico do malte: $c_{\text{malte}} = 0{,}41 \text{ kcal/(kg}\cdot\text{°C)}$ (Palmer / Paddock Wood).
+   - Ataque: $T_{\text{strike}} = T_{\text{alvo}} + \frac{0{,}41 \times M_{\text{malte}} \times (T_{\text{alvo}} - T_{\text{malte}}) + V_{\text{tun}} \times (T_{\text{alvo}} - T_{\text{tun}})}{V_{\text{água}}}$
+   - Infusão: $V_{\text{adição}} = \frac{(T_{\text{novo}} - T_{\text{atual}}) \times (0{,}41 \times M_{\text{malte}} + V_{\text{água}})}{T_{\text{infusão}} - T_{\text{novo}}}$
+9. **Degradação de Lúpulo:**
+   - Taxa diária de degradação ($k$ a 20 °C): $k = -\frac{\ln(1 - \text{Perda}_{6\text{m}} / 100)}{180}$
+   - Efeito Arrhenius com fator $Q_{10} = 2$: Retenção $= e^{-k \times \text{dias} \times 2^{(T - 20)/10} \times \text{embalagem}}$.
+10. **Carbonatação e Priming:**
+    - CO₂ residual: $\text{vol} = 3{,}0378 - 0{,}050062 T_{\text{F}} + 0{,}00026555 T_{\text{F}}^2$
+    - Pressão manométrica em barril (PSI):
+      $$P = -16{,}6999 - 0{,}0101059 T + 0{,}00116512 T^2 + 0{,}173354 T V + 4{,}24267 V - 0{,}0684226 V^2$$
+
+---
+
+## 4. Erros Encontrados e Correções Realizadas
+
+1. **Possibilidade de divisão por zero e `NaN`:**
+   - Em `alcohol`: quando $OG = 1{,}000$ ou $OG = FG$, $(OG - 1)$ provocava `0 / 0 = NaN`. Corrigido com guardas seguras retornando $0$ para teor e atenuação.
+   - Em `gravityAfterVolumeChange`: quando o volume final era $0$, gerava `Infinity`. Corrigido com guarda retornando a densidade inicial se volume final $\le 0$.
+   - Em `ibuTinseth` e `ibuRager`: volumes ou tempos $\le 0$ geravam divisões impróprias. Corrigido com guardas retornando $0$ IBU.
+   - Em `rest`: divisão da relação água/malte quando $M_{\text{malte}} = 0$.
+2. **Ausência da fórmula de Rager no Amargor:**
+   - A calculadora standalone de IBU calculava apenas Tinseth. A fórmula de Jackie Rager foi incorporada a [`src/lib/brewing.ts`](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/src/lib/brewing.ts) e integrada tanto à calculadora standalone quanto ao módulo de receitas (`recipeIbu`).
+3. **Ausência de calculadora explícita de Eficiência de Brassagem e Estimativa OG/FG:**
+   - Adicionadas as calculadoras `efficiency` e `ogfg` ao [`src/lib/calculator-registry.ts`](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/src/lib/calculator-registry.ts), preenchendo a lacuna solicitada e permitindo calcular a eficiência real com base no volume e densidade do fermentador.
+4. **Degradação de Lúpulo com valores extremos:**
+   - Perda em 6 meses $\ge 100\%$ causava $\ln(0)$ ou $\ln(\text{negativo}) = \text{NaN}$. Corrigido limitando a perda entre $0\%$ e $99{,}9\%$.
+5. **Inconsistência nos testes e runner de testes:**
+   - O projeto não possuía o script `"test"` em `package.json`.
+   - `recipe-calc.test.ts` dependia do binário `bun:test`, que não estava disponível no ambiente. Foi refatorado para utilizar `node:test` e `node:assert`, unificando a suíte para Node 22 com suporte a TypeScript nativo.
+   - O teste anterior verificava `assert.equal(calculators.length, 21)`. Com a inclusão das calculadoras solicitadas, o teste agora valida as 23 calculadoras registradas com valores iniciais e integridade finita.
+
+---
+
+## 5. Testes Automatizados Criados e Ampliados
+
+Foi implementado um runner nativo e seguro ([`scripts/test-loader.mjs`](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/scripts/test-loader.mjs) e [`scripts/test-register.mjs`](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/scripts/test-register.mjs)) e configurado o script `"test"` no [`package.json`](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/package.json).
+
+A suíte em [`src/lib/brewing.test.ts`](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/src/lib/brewing.test.ts) foi ampliada com testes cobrindo:
+- **Resultados conhecidos de referência:** Casos clássicos de literatura cervejeira (ex: 20 L, OG 1.050, FG 1.010 $\implies 5{,}25\%$ ABV, $80\%$ atenuação, $163{,}74$ kcal).
+- **Alta densidade:** Validação da fórmula de Hall vs fórmula linear para mostos $> 1{,}080$.
+- **IBU duplo:** Validação cruzada de Tinseth e Rager.
+- **Eficiência:** Validação com 5 kg de malte a 1.037 PPG em 20 L a 1.050 SG $\implies 64{,}77\%$ de eficiência.
+- **Limites e Condições Inválidas:** Bloqueio de volume final zero, FG superior a OG, infusão com temperatura inferior ao repouso, viabilidade nula em propagação e valores de densidade fora da escala física.
+- **Integridade das 23 calculadoras:** Teste automatizado iterando sobre todas as calculadoras registradas garantindo que nenhuma retorne `NaN`, `null` ou valor não finito.
+
+### Resultado da Execução dos Testes (`npm test`):
+```text
+✔ Álcool, Atenuação e Calorias (3 testes)
+✔ Inoculação e Propagação de Levedura (2 testes)
+✔ Refratômetro e Brix (2 testes)
+✔ Correção de Densidade por Temperatura e Volume (3 testes)
+✔ Carbonatação (2 testes)
+✔ Degradação e Frescor do Lúpulo (1 teste)
+✔ Conversão de Escala de Receita (1 teste)
+✔ Conversões de Gravidade e Cor (2 testes)
+✔ Conversões de Unidades Físicas (5 testes)
+✔ Mostura: Água de Ataque, Repouso e Calibração (3 testes)
+✔ Amargor IBU (Tinseth e Rager) e Cor SRM (Morey) (3 testes)
+✔ Eficiência de Brassagem e Estimativa de OG/FG (2 testes)
+✔ Química da Água (1 teste)
+✔ Registro e Integridade de Todas as Calculadoras (2 testes)
+✔ Limites de taxa da API Gemini (3 testes)
+✔ Cálculos de Receitas, Inventário e Sais (8 testes)
+
+ℹ tests: 43 pass, 0 fail (100% de sucesso)
+```
+
+---
+
+## 6. Verificação de Compilação e Build
+
+- `npx tsc -p tsconfig.app.json --noEmit` $\implies$ **0 erros**
+- `npm run lint` $\implies$ **0 erros** (8 avisos cosméticos pré-existentes de fast-refresh em componentes de UI)
+- `npm test` $\implies$ **43 testes passaram**
+- `npm run build` $\implies$ **Sucesso** (`dist/` gerado)
+- `npm run build:standalone` $\implies$ **Sucesso** (aplicativo autocontido de arquivo único gerado em `dist/index.html`)
+
+---
+
+## 7. Limitações Técnicas que Valem Atenção
+
+1. **Modelo de Sean Terrill no Refratômetro:** O modelo linear foi ajustado empiricamente para cervejas com atenuação aparente típica entre $65\%$ e $85\%$. Em cervejas com mostos muito adocicados ou paradas de fermentação precoces, o resultado é uma aproximação.
+2. **Equilíbrio de CO₂ em Barril:** A equação de carbonatação em barril calcula a pressão manométrica de equilíbrio estático. Em sistemas de chope em linha, deve-se considerar adicionalmente o comprimento da mangueira e a perda de carga para serviço sem espuma.
+3. **Solubilidade do Giz ($\text{CaCO}_3$):** O giz necessita de injeção de CO₂ no mosto para solubilizar completamente; caso contrário, precipita como sedimento. A nota da calculadora de química da água já orienta priorizar gipsita e cloreto de cálcio para enriquecimento de cálcio.
+
+Analyzed WaterPage.tsx:L1-81
+Analyzed ProfilesPage.tsx:L1-50
+Analyzed ProfilesPage.tsx:L70-95
+Ran grep water profile and yeast pitch
+Created water-calc.ts
+Created yeast-calc.ts
+Analyzed recipe-calc.ts:L105-155
+Analyzed recipe-calc.ts:L108-160
+Edited recipe-calc.ts
+Analyzed brewing.ts:L125-145
+Edited brewing.ts
+Analyzed calculator-registry.ts:L80-165
+Analyzed WaterPage.tsx:L1-50
+Edited WaterPage.tsx
+Analyzed calculator-registry.ts:L100-180
+Edited calculator-registry.ts
+Edited calculator-registry.ts
+Created water-calc.test.ts
+Created yeast-calc.test.ts
+Ran run npm test with new water and yeast tests · Exited with code 1
+Ran check optimizeSalts numbers
+Analyzed water-calc.ts:L200-280
+Edited water-calc.ts
+Analyzed water-calc.ts:L330-355
+Analyzed water-calc.ts:L356-375
+Edited water-calc.ts
+Ran run npm test · Exited with code 1
+Ran inspect deviations and success in optimizeSalts
+Analyzed water-calc.ts:L350-423
+Analyzed water-calc.ts:L240-350
+Analyzed water-calc.test.ts:L85-115
+Analyzed water-calc.ts:L80-140
+Analyzed water-calc.ts:L40-80
+Analyzed water-calc.ts:L30-40
+Analyzed water-calc.test.ts:L1-25
+Ran run test suite · Exited with code 1
+Edited water-calc.ts
+Edited water-calc.test.ts
+Ran run npm test
+Ran search for yeast in src
+Analyzed calculator-registry.ts:L140-190
+Analyzed calculator-registry.ts:L1-50
+Analyzed brewing.test.ts:L240-279
+Analyzed brewing.ts:L135-165
+Analyzed yeast-calc.ts:L200-275
+Analyzed CalculatorsPage.tsx:L1-60
+Analyzed calculator-registry.ts:L141-170
+Analyzed calculator-registry.ts:L15-30
+Edited calculator-registry.ts
+Analyzed calculator-registry.ts:L135-175
+Edited calculator-registry.ts
+Ran run npm test · Exited with code 1
+Ran check exported functions in yeast-calc.ts
+Analyzed yeast-calc.ts:L125-160
+Analyzed yeast-calc.ts:L65-95
+Analyzed yeast-calc.ts:L200-225
+Edited yeast-calc.ts
+Ran run npm test · Exited with code 1
+Ran inspect StarterStageResult interface
+Edited calculator-registry.ts
+Ran run npm test
+Ran check TypeScript compilation · Exited with code 2
+
+I have initiated the TypeScript type-checking process and will verify the compilation results once it finishes.
+
+Checked task Check TypeScript compilation
+Analyzed yeast-calc.ts:L50-70
+Edited yeast-calc.ts
+Ran check TypeScript compilation
+Checked task Check TypeScript compilation
+Ran run npm test
+Ran run ESLint check
+Ran build the application
+Checked task Build the application
+Checked task Build the application
+Ran build standalone singlefile application
+Checked task Build standalone singlefile application
+Ran check git status
+
+# Relatório de Implementação e Auditoria — Química da Água e Propagação de Leveduras
+
+Foram aprimorados e reestruturados profundamente os módulos de **Química da Água**, **Otimizador de Sais**, **Estimativa de pH da Mostura** e **Inoculação & Propagação de Levedura** no BrewCraft, mantendo a arquitetura pura de cálculo ([AGENTS.md](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/AGENTS.md)), a compatibilidade de interfaces com receitas e lotes, e a identidade visual do sistema.
+
+---
+
+## 1. Módulo de Química da Água ([src/lib/water-calc.ts](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/src/lib/water-calc.ts))
+
+### A. Catálogo Químico de Sais e Contribuição Iônica
+O catálogo foi expandido para cobrir os sais cervejeiros reais com estequiometria molecular exata:
+* **Gipsita (Sulfato de Cálcio)** — $\text{CaSO}_4\cdot 2\text{H}_2\text{O}$ (MW: 172,17 g/mol):
+  $1\text{ g/10 L} \implies +23,28\text{ ppm Ca}^{2+},\ +55,79\text{ ppm SO}_4^{2-}$
+* **Cloreto de Cálcio di-hidratado** — $\text{CaCl}_2\cdot 2\text{H}_2\text{O}$ (MW: 147,01 g/mol):
+  $1\text{ g/10 L} \implies +27,26\text{ ppm Ca}^{2+},\ +48,23\text{ ppm Cl}^-$
+* **Cloreto de Cálcio anidro** — $\text{CaCl}_2$ (MW: 110,98 g/mol):
+  $1\text{ g/10 L} \implies +36,11\text{ ppm Ca}^{2+},\ +63,89\text{ ppm Cl}^-$
+* **Sal Amargo / Sal de Epsom** — $\text{MgSO}_4\cdot 7\text{H}_2\text{O}$ (MW: 246,47 g/mol):
+  $1\text{ g/10 L} \implies +9,86\text{ ppm Mg}^{2+},\ +38,96\text{ ppm SO}_4^{2-}$
+* **Cloreto de Magnésio** — $\text{MgCl}_2\cdot 6\text{H}_2\text{O}$ (MW: 203,30 g/mol):
+  $1\text{ g/10 L} \implies +11,96\text{ ppm Mg}^{2+},\ +34,88\text{ ppm Cl}^-$
+* **Sal de Cozinha (NaCl puro não iodado)** — $\text{NaCl}$ (MW: 58,44 g/mol):
+  $1\text{ g/10 L} \implies +39,34\text{ ppm Na}^+,\ +60,66\text{ ppm Cl}^-$
+* **Bicarbonato de Sódio** — $\text{NaHCO}_3$ (MW: 84,01 g/mol):
+  $1\text{ g/10 L} \implies +27,37\text{ ppm Na}^+,\ +72,64\text{ ppm HCO}_3^-$
+* **Giz (Carbonato de Cálcio)** — $\text{CaCO}_3$ (MW: 100,09 g/mol):
+  Tratado com sua limitação físico-química: em água fria neutra sua solubilidade é insignificante ($\approx 0,015\text{ a }0,05\text{ g/L}$ sem borbulhamento de $\text{CO}_2$). O sistema emite alerta explicativo e **nunca o recomenda automaticamente no otimizador**.
+
+### B. Alcalinidade e Alcalinidade Residual de Kolbach
+Implementadas as fórmulas fundamentais de equilíbrio químico descritas por Paul Kolbach e detalhadas por John Palmer e Colin Kaminski (*"Water: A Comprehensive Guide for Brewers"*):
+$$\text{Alcalinidade Total (ppm como }\text{CaCO}_3) = \text{HCO}_3^- \times \frac{50}{61}$$
+$$\text{Alcalinidade Residual (RA)} = \text{Alcalinidade Total} - \left(\frac{\text{Ca}^{2+}}{3,5} + \frac{\text{Mg}^{2+}}{7,0}\right)$$
+
+### C. Divisão de Água de Mostura e Lavagem
+O cálculo preserva o balanço de massa:
+$$\text{Íon}_{\text{final}} = \frac{\text{Íon}_{\text{mostura}} \cdot V_{\text{mostura}} + \text{Íon}_{\text{lavagem}} \cdot V_{\text{lavagem}}}{V_{\text{mostura}} + V_{\text{lavagem}}}$$
+Permite dosagem proporcional automática ou adições personalizadas independentes para cada fase.
+
+---
+
+## 2. Otimizador Inteligente de Sais
+
+O algoritmo de otimização em [src/lib/water-calc.ts](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/src/lib/water-calc.ts):
+1. **Analisa a Água de Origem**: Se os minerais da água de origem já superarem o perfil desejado, emite aviso indicando necessidade de diluição com água de osmose reversa (RO) ou destilada.
+2. **Prioriza Íons Sensoriais Críticos**:
+   - Ajusta o Magnésio até o limite desejado (máximo recomendado: 30–40 ppm).
+   - Ajusta o Sódio via Bicarbonato e Sal de cozinha.
+   - Ajusta o Sulfato via Gipsita e Cloreto via $\text{CaCl}_2$.
+3. **Equilíbrio de Contra-íons e Cálcio**: Reconhece que $\text{Ca}^{2+}$ não pode ser adicionado isoladamente sem aumentar sulfato ou cloreto. Se o cálcio atingido for $\ge 50\text{ ppm}$ (suficiente para ativação enzimática das alfa-amilases e coagulação de proteínas), o algoritmo **não sobrecarrega os ânions** para forçar um cálcio arbitrário, preservando com exatidão a relação $\text{SO}_4^{2-}/\text{Cl}^-$.
+4. **Relatório de Desvios e Metas**: Exibe uma tabela comparativa com o desvio em ppm de cada íon, a relação sulfato/cloreto final e notas contextuais.
+
+---
+
+## 3. Estimador de pH da Mostura
+
+Baseado nos modelos empíricos de Kai Troester (*Braukaiser*), A.J. deLange e Palmer:
+1. **pH Base dos Grãos em Água Destilada**:
+   - Malte Pilsen / Base claro: $\approx 5,65 - 5,75$
+   - Maltes Munich / Vienna / Caramelo claro: $\approx 5,40 - 5,55$
+   - Maltes Crystal / Caramelo médio a escuro: $\approx 4,85 - 5,20$
+   - Maltes Torrados (Chocolate, Black, Cevada Torrada): $\approx 4,40 - 4,70$
+   - Malte Acidificado: $\approx 3,60$
+2. **Efeito Tampão da Água e Precipitação de Fosfatos**:
+   A reação de precipitação de fosfato de cálcio de Kolbach libera íons $\text{H}^+$, acidificando a mostura:
+   $$3\text{Ca}^{2+} + 2\text{HPO}_4^{2-} \rightleftharpoons \text{Ca}_3(\text{PO}_4)_2\downarrow + 2\text{H}^+$$
+   O efeito líquido do tampão da água considera a razão água/grão ($L/\text{kg}$) e a Alcalinidade Residual.
+3. **Acidificantes**:
+   - Ácido Lático 85%: $\approx 11,3\text{ mEq } \text{H}^+/\text{mL}$
+   - Ácido Fosfórico 75%: $\approx 11,5\text{ mEq } \text{H}^+/\text{mL}$
+   - Ácido Fosfórico 10%: $\approx 1,5\text{ mEq } \text{H}^+/\text{mL}$
+   - Malte Acidificado: $\approx 28\text{ mEq } \text{H}^+ / 100\text{ g}$
+4. **Campo para Medição Real**:
+   A interface inclui campo para digitação do pH medido na brassagem real com termocompensação ou leitura à temperatura ambiente ($20\text{–}25^\circ\text{C}$), exibindo a diferença em relação à previsão.
+
+---
+
+## 4. Calculadora de Levedura e Starter ([src/lib/yeast-calc.ts](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/src/lib/yeast-calc.ts))
+
+### A. Taxas de Inoculação Recomendadas (ASBC / White Labs)
+- **Ale padrão**: $0,75\text{ milhões de células / mL / }^\circ\text{P}$
+- **Ale alta densidade** ($> 1,060\text{ SG}$): $1,00\text{ M/mL/}^\circ\text{P}$
+- **Lager padrão**: $1,50\text{ M/mL/}^\circ\text{P}$
+- **Lager alta densidade**: $2,00\text{ M/mL/}^\circ\text{P}$
+- **Híbridas / Kveik**: $0,50\text{ M/mL/}^\circ\text{P}$
+
+### B. Modelo de Viabilidade Celular por Idade e Forma
+- **Levedura Líquida (Modelo White Labs)**: Perda de $\approx 21\%$ de viabilidade a cada 30 dias sob refrigeração ($\approx 0,7\%$ por dia).
+- **Levedura Seca em Sachê Lacrado**: Conservação a vácuo com perda inferior a $0,5\%$ ao mês.
+
+### C. Modelo Dinâmico de Starter de Kai Troester (*Braukaiser*)
+Diferente de calculadoras que utilizam fator fixo arbitrário (como $1,4\text{ B/g}$ constante), o modelo implementado calcula o rendimento baseado na **Taxa de Inoculação do Starter** ($\text{IR} = \text{B/g}$ de extrato):
+$$\text{Rendimento} = \begin{cases} 
+1,40 & \text{se } \text{IR} < 1,4 \\
+1,40 - 0,35 \times (\text{IR} - 1,4) & \text{se } 1,4 \le \text{IR} < 3,5 \\
+\text{Saturação (rendimento residual } \le 0,40) & \text{se } \text{IR} \ge 3,5 
+\end{cases}$$
+O fator é ponderado conforme o método de agitação:
+- **Agitador Magnético (*Stir Plate*)**: $100\%$ do modelo de Troester (aeração e mistura contínuas).
+- **Agitação Manual Intermitente**: $\approx 72\%$ do rendimento.
+- **Fermentação Estática**: $\approx 55\%$ do rendimento.
+
+Suporta também a simulação em **múltiplos estágios (*multi-step*)**, essencial para propagação de cepas líquidas envelhecidas ou grandes volumes de lager.
+
+---
+
+## 5. Interface Atualizada
+
+1. **Página de Água** ([src/components/WaterPage.tsx](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/src/components/WaterPage.tsx)):
+   - Seletor de volume total ou divisão Mostura / Lavagem.
+   - Aplicação de sais proporcional ou independente por etapa.
+   - Catálogo de sais completo com fórmulas moleculares e notas químicas.
+   - Botão **"Otimizar Sais Automaticamente"** com relatório de desvios.
+   - Abas com Minerais Finais e **Estimativa de pH da Mostura** (com grãos, ácidos e pH medido real).
+2. **Registro de Calculadoras** ([src/lib/calculator-registry.ts](file:///home/claudemir/Downloads/brewfather-web-kitchen-main%20(2)/brewfather-web-kitchen-main/src/lib/calculator-registry.ts)):
+   - Calculadora de levedura expandida com forma (líquida vs seca), idade em dias, método de agitação (agitador magnético, manual, estático), densidade de inoculação do starter e taxa final atingida.
+   - Botão de restauração de padrões integrado via `<RotateCcw />`.
+
+---
+
+## 6. Verificação e Testes Automatizados
+
+Foram executados todos os comandos de validação do projeto:
+
+```bash
+# 1. Suíte de testes automatizados completa
+npm test
+# 68 testes executados em 26 suítes: 68 aprovados, 0 falhas.
+
+# 2. Verificação de tipos TypeScript
+npx tsc -p tsconfig.app.json --noEmit
+# 0 erros encontrados.
+
+# 3. Análise estática ESLint
+npm run lint
+# 0 erros encontrados.
+
+# 4. Build de produção para Web
+npm run build
+# Built em 13.19s, chunks minificados e gerados com sucesso.
+
+# 5. Build da aplicação autônoma offline (Double-click standalone)
+npm run build:standalone
+# HTML único de 1.42 MB com todo JS/CSS embutido inline com sucesso.
+```
+
+## Análise do catálogo atual
+- Catálogo central em `src/lib/catalog.ts`: arrays tipados `fermentables`, `hops`, `yeasts`, `miscs` + estilos BJCP; exportado para receitas, inventário, cálculo/custo/relatórios e assistente.
+- Estruturas originais: `CatalogFermentable {name,type,potential,color,price}`, `CatalogHop {name,alpha,origin,price,usage,profile,history,substitutes}`, `CatalogYeast {name,lab,attenuation,tempMin,tempMax,price}`, `CatalogMisc {name,use,price}`.
+- Integração verificada: `src/lib/recipe-calc.ts` (OG/IBU/SRM/custo/lista de compras/dedução), `src/components/RecipeFormPage.tsx` (catálogo + edição), `src/components/InventoryPage.tsx`, `src/components/AiAssistant.tsx`, `src/lib/store.ts` (seeds legados preservados). Entradas legadas preservadas para não quebrar receitas/inventário existentes.
+
+## Estrutura e confiabilidade de dados (atualizada)
+- Tipos estendidos com campos aplicáveis por categoria e rastreio de origem: `source?: "official" | "estimate" | "user" | "unknown"` (e `notes`/categoria onde aplicável).
+  - Maltes/fermentáveis: `name, manufacturer?, type, potential (SG base), color (°L), price, diastaticPower? (°Lintner|\"desconhecido\"), moisture? (%|\"desconhecido\"), source?, notes?`
+  - Lúpulos: `name, origin?, manufacturer?, alpha (%), beta? (%|\"desconhecido\"), price, usage, profile, history?, substitutes?, storage?, source?`
+  - Leveduras: `name, lab, code?, type?, attenuation (%), tempMin/tempMax (°C), flocculation?, alcoholTolerance? (\"desconhecido\"), pitchRate? (\"desconhecido\"), price, source?`
+  - Adjuntos/outros: `name, use, price, category?, source?, notes?`
+- Nenhum valor técnico indisponível foi inventado: parâmetros não confirmados marcados como `desconhecido`; valores numéricos de catálogo (potencial/cor/AA/atenuação/faixas típicas, etc.) incluídos como **estimativas típicas** (`source: "estimate"`) para viabilizar cálculos, devendo ser refinados pelo usuário com a ficha técnica oficial do lote/fabricante. Entradas genéricas configuráveis marcadas como `user` quando apropriado. UI (`InventoryPage`, `RecipeFormPage`) atualizada para exibir/aceitar campos opcionais com segurança.
+
+## Ingredientes avaliados/adicionados (sem duplicatas; existentes preservados)
+
+### 1. Maltes e fermentáveis
+- **Adicionados (solicitados):** Golden Promise, Vienna Malt, Munich I, Munich II, Caramunich I, Caramunich II, Caramunich III, CaraRed, CaraPils, CaraFoam, Special B, Melanoidin Malt, Aromatic Malt, Biscuit Malt, Victory Malt, Chocolate Malt, Chocolate Rye Malt, Carafa Special I, Carafa Special II, Carafa Special III, Black Patent Malt, Roasted Barley, Trigo em Flocos, Trigo Torrado, Centeio em Flocos, Cevada em Flocos, Dextrine Malt, Acidulated Malt.
+- **Já existentes/preservados (equivalentes ou legados):** Pilsen, Pale Ale, Maris Otter, Viena (legado), Munique (legado), Trigo Malteado, Centeio Malteado, Carapils/Carafoam (legado), Caramelo 20/40/60/120L, Biscuit/Melanoidina/Acidulado/Chocolate/Black Malt/Carafa III Special (legados), Cevada Torrada, Aveia/Arroz/Milho em Flocos, DME/LME, açúcares/mel.
+- **Incluídos para integração de receitas especiais:** Lactose, Dextrose, Açúcar Invertido (como fermentáveis). Fabricantes indicados quando típico (ex.: Weyermann, Dingemans, Briess, Crisp, Simpsons, Genérico) com `source: estimate`.
+- **Total fermentáveis no catálogo:** 58 (sem nomes duplicados).
+
+### 2. Lúpulos
+- **Adicionados (solicitados/ausentes):** Talus, Nectaron, Riwaka, Eclipse, HBC 586, HBC 1019, Cashmere, Azacca, Hüll Melon, Barbe Rouge.
+- **Já existentes (avaliados, não duplicados):** El Dorado, Sabro, Strata, Nelson Sauvin, Idaho 7, além de Cascade, Centennial, Chinook, Citra, Mosaic, Simcoe, Amarillo, CTZ, Magnum, Hallertau Mittelfrüh/Blanc, Tettnang, Perle, Saaz, EKG, Fuggle, Galaxy, Motueka, Mandarina Bavaria, Sorachi Ace, Northern Brewer, Willamette.
+- Campos: `alpha` típico, `beta`/`storage` = `desconhecido` quando não confirmado, `usage/profile/substitutes/history/origin/manufacturer` preenchidos quando aplicável; `source: estimate` (cultivares experimentais/comerciais anotados em `notes`).
+- **Total lúpulos:** 37 (sem duplicatas).
+
+### 3. Leveduras
+- **Adicionadas (solicitadas/ausentes):** SafAle K-97, SafAle S-33, SafAle BE-134, Mangrove Jack's M21 Belgian Wit, Mangrove Jack's M44 US West Coast, Diamond Lager, WLP300 Hefeweizen Ale, WLP500 Monastery Ale.
+- **Já existentes (preservadas):** US-05, S-04, WB-06, BE-256, T-58, W-34/70, S-23, Nottingham, Verdant IPA, Voss Kveik, Belle Saison, Novalager, WLP001, WY1968.
+- Campos: `lab/código/tipo/atenuação/tempMin-tempMax/floculação` (típicos, `estimate`) e `alcoholTolerance`/`pitchRate` = `desconhecido` quando não confirmado por ficha no repositório.
+- **Total leveduras:** 22 (sem duplicatas).
+
+### 4. Adjuntos e outros ingredientes
+- **Adicionados/preservados:** Lactose (adjunto), Dextrose (priming/adjunto), Açúcar Invertido (adjunto), Mel (adjunto), Purê de Frutas, Especiarias (mix, configurável pelo usuário), Casca de Arroz, Flocos de Cereais (mix) — além dos existentes Whirlfloc, Musgo Irlandês, Nutriente, sais/ácidos, casca de laranja, coentro.
+- **Total miscs:** 16 (sem duplicatas). Itens genéricos sinalizados para ajuste pelo usuário conforme produto real.
+
+## Fontes técnicas e confiabilidade
+- **Não foram inventados valores para campos vazios:** parâmetros indisponíveis marcados `desconhecido`; categorias genéricas marcadas como configuráveis (`user`/notas).
+- **Origem dos dados registrados:** `estimate` para valores típicos de mercado/fabricante usados no catálogo (potencial, cor, %AA, atenuação, faixas de temperatura, perfil/uso/substitutos usuais). `official` reservado para quando a ficha técnica do fabricante for transcrita/confirmada; recomenda-se validar contra fichas técnicas oficiais (ex.: Weyermann, Crisp, Simpsons, Dingemans, Briess, Yakima Chief/WSU/HBC, NZ Hops, HPA, BarthHaas/Hüll, Comptoir Agricole, Fermentis, Lallemand, Mangrove Jack's, White Labs, Wyeast) para o lote específico antes de uso crítico.
+- Diferenciação explícita entre oficial/estimativa/usuário/desconhecido via campo `source` e `notes`.
+
+## Integração e preservação
+- Novos ingredientes compatíveis com: criação/edição de receitas, inventário, calculadoras e cálculos de OG/FG/IBU/SRM/custo/lista de compras/dedução/relatórios e payloads do assistente (campos usados permanecem presentes; campos novos são opcionais).
+- Receitas e ingredientes já cadastrados preservados (nomes/entradas legadas mantidos; seeds intactos).
+- Arquivos alterados: `src/lib/catalog.ts`, `src/components/InventoryPage.tsx`, `src/components/RecipeFormPage.tsx`; teste criado: `src/lib/catalog.test.ts`.
+
+## Testes e build
+- `npm run build`: **sucesso** (vite build concluído).
+- `node --experimental-transform-types --import ./scripts/test-register.mjs --test src/lib/catalog.test.ts src/lib/brewing.test.ts src/lib/recipe-calc.test.ts`: **48 testes, 17 suites, 0 falhas** (inclui cobertura de presença/sem duplicatas, campos técnicos/`desconhecido`, origem e uso dos novos itens em cálculos de receita/IBU/custo).
+
+## Análise do assistente atual (preservado)
+- **Integração Gemini mantida (não substituída):** `src/lib/gemini.ts` (`GeminiService`, modelos Gemini 3, fallback, `googleSearch` tool, streaming `chatStream`, extração JSON, rate-limit `geminiLimiter`/`RequestLimiter`, classificação de erros, abort) e uso em `src/components/AiAssistant.tsx`.
+- **Funcionalidades preservadas:** chat com streaming, contexto por mensagem, upload de imagem, gravação de voz (SpeechRecognition), Gemini Live (`use-gemini-live.ts`), histórico de conversas local + sync em nuvem opcional (`cloud-sync`), limpar/nova conversa, indicador de modelo/fallback, retry em resposta vazia, tratamento de abort/429/quota/indisponibilidade.
+- **Execução de ações preservada e endurecida:** parsing de JSON (inclusive fenced/incompleto) e ações de receita/inventário/configuração mantidas, agora sob validação e confirmação (ver abaixo). `UPDATE_SETTING` continua aplicável via `saveSettings`.
+
+## Implementação (arquivos)
+- `src/lib/ai-copilot.ts` (novo): camada controlada integrada aos dados/funções reais do BrewCraft — montagem de contexto, consultas, execução de calculadoras, propostas validadas (criar/editar receita, adicionar inventário), aplicação explícita e parsing robusto de JSON.
+- `src/components/AiAssistant.tsx`: injeta contexto real a cada envio, trata ações como propostas/executa calculadora real, exibe UI de confirmação (antes/depois, itens afetados, faltas de estoque, avisos) e só aplica após aprovação; mantém streaming/histórico/voz/live/imagem.
+- `src/lib/gemini.ts`: prompt de sistema evoluído para copiloto (uso exclusivo do contexto BrewCraft, sem invenção/cálculo mental, distinção pesquisado×BrewCraft, confirmação obrigatória, pedir dados essenciais quando faltarem, consultoria/BJCP).
+- `src/lib/ai-copilot.test.ts` (novo): testes de consulta, criação/edição, calculadoras, confirmação, respostas incompletas e erros de execução/argumentos.
+- Funcionalidades pré-existentes do app (receitas/lotes/inventário/calculadoras/catálogos) preservadas.
+
+## 1. Acesso às receitas
+- **Implementado:** `buildCopilotContext` envia ao modelo, a cada mensagem, as receitas reais completas com resultados recalculados pelas funções do BrewCraft (`recipeStats`): nome, estilo (`styleCode`), volume/lote, maltes e quantidades, lúpulos e adições (uso/min/dia/AA), leveduras, adjuntos/miscs, OG, FG, ABV, IBU, EBC/SRM, eficiência, equipamento, fermentação, perfil de água (`waterProfileId`), notas e custos/volumes derivados. A IA é instruída a consultar esses dados e não inventar composição.
+- **Limitação:** o modelo responde com base no contexto injetado (não há tool-calling determinístico de busca por ID além do que o prompt orienta); a corretude da análise textual depende da interpretação do Gemini sobre o contexto fornecido.
+
+## 2. Acesso ao inventário
+- **Implementado:** contexto inclui inventário real (tipo, nome, quantidade, unidade, preço, mínimo e atributos como alfa/potencial/cor/atenuação quando houver). Propostas/listas respeitam quantidades disponíveis via `shoppingList` e a UI destaca faltas (“faltam X unidade”) quando o estoque não cobre a necessidade.
+- **Validade e datas de aquisição:** **não implementado no modelo de dados atual** (`InventoryItem` não possui esses campos no app). O contexto reporta explicitamente por item: “Validade e data de aquisição não cadastradas para este item.” (e expõe os campos se existirem em registros legados), para que a IA informe claramente a ausência em vez de inventar.
+
+## 3. Acesso às calculadoras
+- **Implementado:** a IA não deve calcular “de cabeça”; usa resultados já calculados no contexto (receitas/OG/FG/ABV/IBU/EBC/eficiência/volumes/custos) e pode solicitar execução real via ação `CALCULATE/RUN_CALCULATOR` (`calculatorId` + `values`), executada por `executeCalculator` sobre o registro real (`calculator-registry`) com validação (`validateCalculator`). Ao criar/editar receita, os resultados são recalculados pelo BrewCraft (`recipeStats`) antes de apresentar a proposta (antes/depois).
+- **Cobertura:** expõe o catálogo de calculadoras disponíveis (OG/FG/ABV/atenuação, IBU, cor/SRM-EBC, eficiência, carbonatação, inoculação/levedura, química da água, volumes, etc., conforme `calculators`). Mapeamento de linguagem natural para um `calculatorId`+`values` específicos depende do modelo; execuções inválidas retornam erro controlado (não aplicam nada).
+
+## 4. Criação de receitas
+- **Implementado:** ação tratada como **proposta** (`PROPOSE_CREATE_RECIPE`/compat. `CREATE_RECIPE`) validada por `proposeRecipeCreate`: exige informações essenciais (nome, estilo, volume/eficiência-equipamento, fermentáveis) e **não preenche silenciosamente** — se faltar, retorna erro/missing e pede ao usuário. Considera volume/eficiência/equipamento e estoque informado; receita normalizada e recalculada por funções reais antes de ser apresentada (OG/FG/ABV/IBU/EBC). Não é aplicada sem confirmação.
+- **Limitação:** seleção “ótima” de ingredientes/perfil de água/metas exatas conforme intenção do usuário depende da proposta gerada pelo Gemini a partir do contexto; a aplicação exige aprovação.
+
+## 5. Edição de receitas
+- **Implementado:** **proposta** (`PROPOSE_UPDATE_RECIPE`, exige `id` real do contexto) via `proposeRecipeUpdate`: monta receita atualizada, recalcula com funções reais e apresenta **antes/depois** (OG/FG/ABV/IBU/EBC/SRM, volume, eficiência), ingredientes/adições e lista de itens afetados; verifica faltas no estoque. Suporta alterações solicitadas (ABV/amargor/cor/corpo, substituições, levedura, volume/equipamento) na medida em que o modelo propõe mudanças válidas sobre o `id` correto.
+- **Limitação:** não apaga receitas; alterações complexas dependem do payload proposto pelo modelo (sempre validado/recalculado e sujeito a confirmação).
+
+## 6. Sistema de confirmação
+- **Implementado:** nenhuma mutação de receita/inventário é aplicada silenciosamente. Fluxo: IA gera proposta → UI exibe alteração, ingredientes/quantidades afetados, resultados **antes/depois** (e faltas de estoque/avisos) → usuário **Aprova ou Rejeita** → `applyProposal` só executa na aprovação e retorna mensagem de sucesso apenas em caso real (`ok: true`); rejeição/erro não altera dados e informa o motivo. `UPDATE_SETTING` permanece como ação de configuração direta (não destrutiva de receitas/inventário) preservando comportamento existente.
+
+## 7. Análise cervejeira
+- **Implementado (orientado por contexto/prompt):** o contexto inclui estilos BJCP (faixas OG/FG/IBU/SRM/ABV) e dados reais das receitas; o prompt instrui a atuar como consultora, comparar com diretrizes BJCP **distinguindo recomendação técnica de exigência oficial de estilo**, identificar desequilíbrios, avaliar maltes/lúpulos/fermentação/água, explicar OG/FG e sugerir melhorias/substituições com base nos dados calculados.
+- **Limitação:** a qualidade da análise e das sugestões é gerada pelo Gemini (não é um motor cervejeiro determinístico); números oficiais de comparação vêm do contexto BJCP disponível, mas a argumentação é do modelo.
+
+## 8. Pesquisa na internet
+- **Implementado/preservado:** ferramenta de busca (`googleSearch`) mantida na configuração do Gemini. O prompt exige diferenciar explicitamente **“Informações pesquisadas (externas)”** de **“Dados do BrewCraft”** e proíbe inventar fontes/referências (citar apenas o retornado). Exibição de citações/links depende do conteúdo retornado pelo modelo/API.
+
+## 9. Experiência do usuário
+- **Implementado:** prompt orienta respostas organizadas (títulos, listas, tabelas, números claros) e linguagem natural (ex.: filtrar receitas por ABV, comparar receitas, checar estoque/faltas, calcular compras). Cartão de confirmação com tabela antes/depois e listas de ingredientes; cálculo real via ação CALCULATE exibido com resultados do sistema. Contexto já fornece base para consultas como “receitas com mais de 6% ABV” e “quanto comprar para X litros” (via requisitos/estoque/faltas calculados).
+- **Limitação:** consultas complexas em linguagem natural dependem do modelo interpretar e, quando necessário, propor ação/usar contexto corretamente (sem UI dedicada de filtros/consultas estruturadas além do chat).
+
+## 10. Segurança e confiabilidade
+- **Implementado:** validação controlada antes de aplicar (`propose*`/`validateCalculator`/`executeCalculator`/`applyProposal`, checagem de `id`, tipos/valores, normalização), sem confiar cegamente na resposta; mutações só via funções controladas do BrewCraft e **após confirmação**; tratamento de respostas incompletas/fenced (`extractJsonObject`), erros de API/429/quota/abort e operações malsucedidas com mensagens de erro (sem “sucesso” falso). `VITE_GEMINI_API_KEY` lida via `import.meta.env` (sem chave hardcoded adicionada).
+- **Observação:** a chave `VITE_GEMINI_API_KEY` é, por natureza de apps Vite frontend, exposta ao cliente em tempo de execução/build — nenhuma chave foi adicionada ao código-fonte público, mas segurança total da chave requer proxy/backend (não introduzido para preservar a integração atual).
+
+## 11. Testes e validação
+- **Criados/executados:** `src/lib/ai-copilot.test.ts` — consulta de receitas (dados reais + resultados calculados), filtro por ABV, consulta de inventário (quantidades/preços e indicação de metadados ausentes), execução/validação/falha de calculadoras, criação de receita (proposta com cálculo real e rejeição por falta de info essencial), alteração de receita (antes/depois, itens afetados, id inexistente), confirmação (aplica só explicitamente, estado original intacto até aplicar), falhas/argumentos inválidos e respostas incompletas/JSON.
+- **Execução:** `node --experimental-transform-types --import ./scripts/test-register.mjs --test src/lib/ai-copilot.test.ts src/lib/gemini-limits.test.ts` → **16 testes, 7 suites, 0 falhas**.
+- **Build:** `npm run build` → **sucesso** (vite). Aviso pré-existente de chunk grande mantido.
+
+## O que a IA realmente consegue fazer agora
+- Consultar e analisar receitas/inventário/configurações **reais** injetados do BrewCraft (composição e métricas calculadas pelo sistema), comparar com faixas BJCP do contexto e sinalizar dados ausentes (ex.: validade/aquisição não cadastrada, faltas de estoque).
+- Usar **cálculos reais** do BrewCraft (resultados de `recipeStats` no contexto e execução de calculadoras registradas via ação validada) em vez de fórmulas mentais.
+- **Propor** criação/edição de receitas e adições de inventário com validação, lista de afetados e **antes/depois** calculados, respeitando estoque e exigindo informações essenciais (pergunta em vez de inventar).
+- **Aplicar alterações somente após confirmação** do usuário, com feedback de sucesso apenas quando executado de fato; rejeitar/errar sem mutar.
+- Atuar como consultora (orientada pelo modelo) com distinção BJCP recomendação×exigência e, quando houver busca, separar informação externa de dados do BrewCraft sem inventar fontes.
+- Preservar chat streaming, histórico/sync, voz/live/imagem e limites/fallback da API Gemini.
+
+## O que ainda não foi implementado
+- **Campos de validade e data de aquisição no inventário:** ausentes no esquema/CRUD do app; a IA apenas informa que não estão cadastrados (não inventa).
+- **Execução automática/determinística de todas as consultas em linguagem natural:** não há motor de query/tool-calling completo por intenção (ex.: “lúpulos próximos do vencimento” só é plenamente respondível quando tais datas existirem; filtros complexos dependem da interpretação do contexto pelo modelo).
+- **Motor cervejeiro determinístico de sugestões/otimização:** recomendações e adaptações de receita são geradas pelo Gemini (com dados/cálculos reais como base), não por um otimizador algorítmico interno.
+- **Proteção de chave no backend/proxy:** integração permanece client-side (Vite) como no estado atual; nenhuma chave exposta no repositório, mas o modelo de entrega da chave é o mesmo do frontend.
+- **Testes de integração E2E com a API Gemini real (chamadas de rede/chave):** cobertos a lógica/controladores, parsing, propostas, calculadoras e limites; respostas reais do modelo e pesquisa externa dependem do serviço/chave em runtime.
+

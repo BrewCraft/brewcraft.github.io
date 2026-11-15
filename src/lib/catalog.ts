@@ -1,99 +1,204 @@
-/** Built-in ingredient catalog and BJCP 2021 style guidelines (subset). */
 export type FermentableType = "grao" | "extrato" | "acucar" | "adjunto";
-export interface CatalogFermentable { name: string; type: FermentableType; potential: number; color: number; price: number }
-export interface CatalogHop { name: string; alpha: number; origin: string; price: number; usage: string; profile: string; history: string; substitutes: string[] }
-export interface CatalogYeast { name: string; lab: string; attenuation: number; tempMin: number; tempMax: number; price: number }
-export interface CatalogMisc { name: string; use: string; price: number }
+export type DataSource = "official" | "estimate" | "user" | "unknown";
 
-// potential = SG of 1 lb in 1 US gal at 100% efficiency (PPG as SG); color in °L; price in R$/kg
+export interface CatalogFermentable {
+  name: string;
+  manufacturer?: string;
+  type: FermentableType;
+  potential: number; // SG base usado nos cálculos (ex.: 1.037)
+  color: number; // °L
+  price: number; // R$/kg
+  diastaticPower?: number | "desconhecido"; // °Lintner
+  moisture?: number | "desconhecido"; // %
+  source?: DataSource;
+  notes?: string;
+}
+
+export interface CatalogHop {
+  name: string;
+  origin?: string;
+  manufacturer?: string;
+  alpha: number; // % (típico)
+  beta?: number | "desconhecido"; // %
+  price: number; // R$/kg
+  usage: string;
+  profile: string;
+  history?: string;
+  substitutes?: string[];
+  storage?: string;
+  source?: DataSource;
+}
+
+export interface CatalogYeast {
+  name: string;
+  lab: string; // fabricante
+  code?: string;
+  type?: "Ale" | "Lager" | "Híbrida" | "Selvagem" | "Bactéria";
+  attenuation: number; // % (típico)
+  tempMin: number; // °C
+  tempMax: number; // °C
+  flocculation?: "Baixa" | "Média" | "Média-Alta" | "Alta" | "Muito Alta" | "desconhecido";
+  alcoholTolerance?: string | "desconhecido";
+  pitchRate?: string | "desconhecido";
+  price: number; // R$/pacote
+  source?: DataSource;
+}
+
+export interface CatalogMisc {
+  name: string;
+  use: string;
+  price: number; // R$/unidade (convenção existente)
+  category?: string;
+  source?: DataSource;
+  notes?: string;
+}
+
+// price in R$/kg
 export const fermentables: CatalogFermentable[] = [
-  { name: "Pilsen", type: "grao", potential: 1.037, color: 1.8, price: 18 },
-  { name: "Pale Ale", type: "grao", potential: 1.037, color: 3, price: 20 },
-  { name: "Maris Otter", type: "grao", potential: 1.038, color: 3.5, price: 28 },
-  { name: "Viena", type: "grao", potential: 1.036, color: 4, price: 22 },
-  { name: "Munique", type: "grao", potential: 1.037, color: 9, price: 22 },
-  { name: "Trigo Malteado", type: "grao", potential: 1.038, color: 2, price: 22 },
-  { name: "Centeio Malteado", type: "grao", potential: 1.029, color: 3.5, price: 26 },
-  { name: "Aveia em Flocos", type: "adjunto", potential: 1.033, color: 1, price: 16 },
-  { name: "Carapils / Carafoam", type: "grao", potential: 1.033, color: 2, price: 26 },
-  { name: "Caramelo 20L", type: "grao", potential: 1.035, color: 20, price: 26 },
-  { name: "Caramelo 40L", type: "grao", potential: 1.034, color: 40, price: 26 },
-  { name: "Caramelo 60L", type: "grao", potential: 1.034, color: 60, price: 26 },
-  { name: "Caramelo 120L", type: "grao", potential: 1.033, color: 120, price: 27 },
-  { name: "Biscuit", type: "grao", potential: 1.035, color: 25, price: 28 },
-  { name: "Melanoidina", type: "grao", potential: 1.037, color: 28, price: 28 },
-  { name: "Acidulado", type: "grao", potential: 1.027, color: 2, price: 30 },
-  { name: "Chocolate", type: "grao", potential: 1.034, color: 350, price: 30 },
-  { name: "Cevada Torrada", type: "grao", potential: 1.025, color: 300, price: 30 },
-  { name: "Black Malt", type: "grao", potential: 1.025, color: 500, price: 30 },
-  { name: "Carafa III Special", type: "grao", potential: 1.032, color: 470, price: 34 },
-  { name: "Extrato de Malte Seco (DME)", type: "extrato", potential: 1.044, color: 4, price: 60 },
-  { name: "Extrato de Malte Líquido (LME)", type: "extrato", potential: 1.036, color: 4, price: 45 },
-  { name: "Açúcar Cristal", type: "acucar", potential: 1.046, color: 0, price: 6 },
-  { name: "Açúcar Candi Escuro", type: "acucar", potential: 1.036, color: 80, price: 50 },
-  { name: "Mel", type: "acucar", potential: 1.035, color: 2, price: 40 },
-  { name: "Arroz em Flocos", type: "adjunto", potential: 1.032, color: 1, price: 14 },
-  { name: "Milho em Flocos", type: "adjunto", potential: 1.037, color: 1, price: 14 },
+  { name: "Pilsen", manufacturer: "Genérico", type: "grao", potential: 1.037, color: 1.8, price: 18, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Pale Ale", manufacturer: "Genérico", type: "grao", potential: 1.037, color: 3, price: 20, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Maris Otter", manufacturer: "Crisp", type: "grao", potential: 1.038, color: 3.5, price: 28, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Golden Promise", manufacturer: "Simpsons", type: "grao", potential: 1.038, color: 2.5, price: 30, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate", notes: "Malte base britânico; valores típicos estimados." },
+  { name: "Vienna Malt", manufacturer: "Weyermann", type: "grao", potential: 1.036, color: 3.5, price: 22, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Viena", manufacturer: "Genérico", type: "grao", potential: 1.036, color: 4, price: 22, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate", notes: "Entrada legada preservada; prefira Vienna Malt." },
+  { name: "Munich I", manufacturer: "Weyermann", type: "grao", potential: 1.037, color: 6, price: 22, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Munich II", manufacturer: "Weyermann", type: "grao", potential: 1.036, color: 9, price: 23, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Munique", manufacturer: "Genérico", type: "grao", potential: 1.037, color: 9, price: 22, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate", notes: "Entrada legada preservada; prefira Munich I/II." },
+  { name: "Trigo Malteado", manufacturer: "Genérico", type: "grao", potential: 1.038, color: 2, price: 22, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Centeio Malteado", manufacturer: "Genérico", type: "grao", potential: 1.029, color: 3.5, price: 26, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Carapils / Carafoam", manufacturer: "Weyermann", type: "grao", potential: 1.033, color: 2, price: 26, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate", notes: "Entrada combinada legada preservada." },
+  { name: "CaraPils", manufacturer: "Weyermann", type: "grao", potential: 1.033, color: 1.8, price: 26, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "CaraFoam", manufacturer: "Weyermann", type: "grao", potential: 1.033, color: 1.8, price: 26, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Dextrine Malt", manufacturer: "Briess", type: "grao", potential: 1.033, color: 1.8, price: 26, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Caramelo 20L", manufacturer: "Genérico", type: "grao", potential: 1.035, color: 20, price: 26, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Caramelo 40L", manufacturer: "Genérico", type: "grao", potential: 1.034, color: 40, price: 26, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Caramelo 60L", manufacturer: "Genérico", type: "grao", potential: 1.034, color: 60, price: 26, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Caramelo 120L", manufacturer: "Genérico", type: "grao", potential: 1.033, color: 120, price: 27, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Caramunich I", manufacturer: "Weyermann", type: "grao", potential: 1.035, color: 34, price: 28, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Caramunich II", manufacturer: "Weyermann", type: "grao", potential: 1.034, color: 46, price: 28, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Caramunich III", manufacturer: "Weyermann", type: "grao", potential: 1.034, color: 57, price: 29, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "CaraRed", manufacturer: "Weyermann", type: "grao", potential: 1.034, color: 20, price: 28, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Special B", manufacturer: "Dingemans", type: "grao", potential: 1.03, color: 148, price: 30, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Melanoidina", manufacturer: "Genérico", type: "grao", potential: 1.037, color: 28, price: 28, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate", notes: "Entrada legada preservada." },
+  { name: "Melanoidin Malt", manufacturer: "Weyermann", type: "grao", potential: 1.037, color: 27, price: 28, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Aromatic Malt", manufacturer: "Dingemans", type: "grao", potential: 1.036, color: 20, price: 28, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Biscuit", manufacturer: "Genérico", type: "grao", potential: 1.035, color: 25, price: 28, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate", notes: "Entrada legada preservada." },
+  { name: "Biscuit Malt", manufacturer: "Dingemans", type: "grao", potential: 1.035, color: 25, price: 28, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Victory Malt", manufacturer: "Briess", type: "grao", potential: 1.034, color: 28, price: 28, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Chocolate", manufacturer: "Genérico", type: "grao", potential: 1.034, color: 350, price: 30, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate", notes: "Entrada legada preservada." },
+  { name: "Chocolate Malt", manufacturer: "Genérico", type: "grao", potential: 1.028, color: 350, price: 30, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Chocolate Rye Malt", manufacturer: "Weyermann", type: "grao", potential: 1.028, color: 250, price: 34, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Cevada Torrada", manufacturer: "Genérico", type: "grao", potential: 1.025, color: 300, price: 30, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate", notes: "Roasted Barley." },
+  { name: "Roasted Barley", manufacturer: "Genérico", type: "grao", potential: 1.025, color: 300, price: 30, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate", notes: "Equivalente a cevada torrada; entrada preservada como nome solicitado." },
+  { name: "Black Malt", manufacturer: "Genérico", type: "grao", potential: 1.025, color: 500, price: 30, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate", notes: "Entrada legada preservada." },
+  { name: "Black Patent Malt", manufacturer: "Genérico", type: "grao", potential: 1.025, color: 500, price: 30, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Carafa Special I", manufacturer: "Weyermann", type: "grao", potential: 1.032, color: 320, price: 34, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Carafa Special II", manufacturer: "Weyermann", type: "grao", potential: 1.032, color: 415, price: 34, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Carafa III Special", manufacturer: "Weyermann", type: "grao", potential: 1.032, color: 470, price: 34, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate", notes: "Entrada legada preservada." },
+  { name: "Carafa Special III", manufacturer: "Weyermann", type: "grao", potential: 1.032, color: 470, price: 34, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Trigo em Flocos", manufacturer: "Genérico", type: "adjunto", potential: 1.035, color: 1.6, price: 16, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Trigo Torrado", manufacturer: "Genérico", type: "grao", potential: 1.025, color: 450, price: 30, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Centeio em Flocos", manufacturer: "Genérico", type: "adjunto", potential: 1.033, color: 2, price: 18, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Cevada em Flocos", manufacturer: "Genérico", type: "adjunto", potential: 1.032, color: 1.7, price: 16, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Aveia em Flocos", manufacturer: "Genérico", type: "adjunto", potential: 1.033, color: 1, price: 16, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Arroz em Flocos", manufacturer: "Genérico", type: "adjunto", potential: 1.032, color: 1, price: 14, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Milho em Flocos", manufacturer: "Genérico", type: "adjunto", potential: 1.037, color: 1, price: 14, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Acidulado", manufacturer: "Genérico", type: "grao", potential: 1.027, color: 2, price: 30, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate", notes: "Entrada legada preservada." },
+  { name: "Acidulated Malt", manufacturer: "Weyermann", type: "grao", potential: 1.027, color: 2, price: 30, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Extrato de Malte Seco (DME)", manufacturer: "Genérico", type: "extrato", potential: 1.044, color: 4, price: 60, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Extrato de Malte Líquido (LME)", manufacturer: "Genérico", type: "extrato", potential: 1.036, color: 4, price: 45, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Açúcar Cristal", manufacturer: "Genérico", type: "acucar", potential: 1.046, color: 0, price: 6, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Açúcar Candi Escuro", manufacturer: "Genérico", type: "acucar", potential: 1.036, color: 80, price: 50, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Mel", manufacturer: "Genérico", type: "acucar", potential: 1.035, color: 2, price: 40, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Lactose", manufacturer: "Genérico", type: "acucar", potential: 1.02, color: 0, price: 30, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate", notes: "Açúcar não fermentável (contribuição de extrato aparente baixa nos cálculos simples)." },
+  { name: "Dextrose", manufacturer: "Genérico", type: "acucar", potential: 1.046, color: 0, price: 12, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
+  { name: "Açúcar Invertido", manufacturer: "Genérico", type: "acucar", potential: 1.046, color: 0, price: 15, diastaticPower: "desconhecido", moisture: "desconhecido", source: "estimate" },
 ];
 
-// price in R$/kg; usage = indicação de uso; profile = perfil sensorial; substitutes = variedades substitutas
+// price in R$/kg
 export const hops: CatalogHop[] = [
-  { name: "Cascade", alpha: 6, origin: "EUA", price: 250, usage: "Duplo Propósito", profile: "Floral, cítrico, toranja (grapefruit)", history: "Lançado em 1972 pelo programa do USDA, revolucionou a cerveja artesanal americana. É a assinatura histórica da icônica Sierra Nevada Pale Ale.", substitutes: ["Centennial", "Amarillo"] },
-  { name: "Centennial", alpha: 10, origin: "EUA", price: 280, usage: "Duplo Propósito", profile: "Cítrico, floral, levemente resinoso", history: "Criado em 1974 e lançado em 1990. Ganhou o apelido de 'Super Cascade' por ter um perfil cítrico muito semelhante, mas com quase o dobro de alfa ácido.", substitutes: ["Cascade", "Chinook"] },
-  { name: "Chinook", alpha: 13, origin: "EUA", price: 280, usage: "Duplo Propósito", profile: "Pinho, especiarias, toranja", history: "Lançado em 1985 pelo USDA em Washington, originou-se do cruzamento do lúpulo inglês Petham Golding com uma variedade silvestre americana.", substitutes: ["Columbus (CTZ)", "Northern Brewer"] },
-  { name: "Citra", alpha: 12.5, origin: "EUA", price: 450, usage: "Aroma", profile: "Frutas tropicais, manga, maracujá, cítrico", history: "Lançado em 2008 pela Hop Breeding Company. Seu cruzamento complexo (incluindo Hallertau e East Kent) impulsionou a febre mundial das NEIPAs.", substitutes: ["Mosaic", "Galaxy"] },
-  { name: "Mosaic", alpha: 12, origin: "EUA", price: 450, usage: "Aroma", profile: "Mirtilo, manga, frutas tropicais, terroso", history: "Lançado em 2012 como HBC 369. É geneticamente 'filho' do Simcoe e ganhou esse nome pela vasta complexidade de aromas (um mosaico) que entrega.", substitutes: ["Citra", "Simcoe"] },
-  { name: "Simcoe", alpha: 13, origin: "EUA", price: 420, usage: "Duplo Propósito", profile: "Maracujá, pinho, terroso, cítrico", history: "Lançado em 2000 pela Yakima Chief Ranches. Tornou-se rapidamente o pilar fundamental de amargor e aroma das West Coast IPAs modernas.", substitutes: ["Mosaic", "Chinook"] },
-  { name: "Amarillo", alpha: 9, origin: "EUA", price: 380, usage: "Aroma", profile: "Laranja, tangerina, floral, doce", history: "Descoberto por acaso crescendo na Virgil Gamache Farms nos anos 1990, foi patenteado e lançado em 2003 com exclusividade rigorosa de cultivo.", substitutes: ["Cascade", "Centennial"] },
-  { name: "Columbus (CTZ)", alpha: 15, origin: "EUA", price: 260, usage: "Duplo Propósito", profile: "Picante, terroso, pungente, pinho", history: "Parte do trio CTZ (Columbus, Tomahawk, Zeus). Surgiu nos anos 1980 e é amplamente utilizado por cervejeiros para extração rápida de amargor intenso e dry hopping.", substitutes: ["Chinook", "Magnum"] },
-  { name: "Magnum", alpha: 13, origin: "Alemanha", price: 220, usage: "Amargor", profile: "Limpo, amargor suave, levemente cítrico", history: "Cultivado em Hüll, Alemanha, desde 1980. Descende do lúpulo americano Galena e é muito apreciado por entregar um amargor extremamente limpo e neutro.", substitutes: ["Columbus (CTZ)", "Northern Brewer"] },
-  { name: "Hallertau Mittelfrüh", alpha: 4, origin: "Alemanha", price: 300, usage: "Aroma", profile: "Floral, picante, nobre, levemente terroso", history: "A variedade nobre original e clássica da Baviera. Quase foi extinta por infecções de fungos nos anos 1970, mas sobreviveu pela demanda insubstituível em Lagers.", substitutes: ["Tettnang", "Saaz"] },
-  { name: "Hallertau Blanc", alpha: 9, origin: "Alemanha", price: 380, usage: "Aroma", profile: "Uva branca, vinho, capim-limão, maracujá", history: "Lançado na Alemanha em 2012 para competir com os lúpulos frutados do Novo Mundo. Seu perfil lembra notavelmente o vinho Sauvignon Blanc.", substitutes: ["Nelson Sauvin", "Motueka"] },
-  { name: "Tettnang", alpha: 4.5, origin: "Alemanha", price: 300, usage: "Aroma", profile: "Herbal, picante, floral suave", history: "Um lúpulo nobre com séculos de tradição, cultivado quase exclusivamente na região de Tettnang e essencial para as tradicionais cervejas de trigo alemãs (Weissbier).", substitutes: ["Saaz", "Hallertau Mittelfrüh"] },
-  { name: "Perle", alpha: 8, origin: "Alemanha", price: 260, usage: "Duplo Propósito", profile: "Picante, floral, menta leve", history: "Criado no instituto alemão Hüll em 1978 a partir do inglês Northern Brewer, focado em combinar boa resistência a pragas agrícolas com um perfil de aroma clássico.", substitutes: ["Northern Brewer", "Tettnang"] },
-  { name: "Saaz", alpha: 3.5, origin: "Rep. Tcheca", price: 300, usage: "Aroma", profile: "Terroso, picante, herbal intenso (clássico Pilsner)", history: "O lúpulo clássico da Boêmia com mais de 700 anos de história. É a alma da Pilsner Urquell, definindo o estilo Bohemian Pilsner desde 1842.", substitutes: ["Tettnang", "Hallertau Mittelfrüh"] },
-  { name: "East Kent Goldings", alpha: 5, origin: "Reino Unido", price: 320, usage: "Aroma", profile: "Terroso, mel, floral, especiarias suaves", history: "Desenvolvido na Inglaterra por volta de 1790. É o lúpulo essencial e histórico por trás das autênticas IPAs inglesas e Bitter Ales.", substitutes: ["Fuggle", "Willamette"] },
-  { name: "Fuggle", alpha: 4.5, origin: "Reino Unido", price: 300, usage: "Aroma", profile: "Terroso, amadeirado, levemente frutado", history: "Descoberto casualmente em Kent, na Inglaterra, em 1868 por Richard Fuggle. Foi a variedade mais cultivada no Reino Unido durante o século XIX.", substitutes: ["Willamette", "East Kent Goldings"] },
-  { name: "Galaxy", alpha: 14, origin: "Austrália", price: 520, usage: "Aroma", profile: "Maracujá, pêssego, frutas cítricas intensas", history: "Lançado em 2009 na Austrália (descendente do Perle alemão). Foi o principal responsável por colocar os lúpulos australianos no mapa mundial da cerveja.", substitutes: ["Citra", "Nelson Sauvin"] },
-  { name: "Nelson Sauvin", alpha: 12, origin: "Nova Zelândia", price: 550, usage: "Aroma", profile: "Vinho branco, groselha, uva, maracujá", history: "Lançado no ano 2000, foi batizado em homenagem à uva Sauvignon Blanc devido à incrível semelhança de aroma proveniente do seu terroir neozelandês.", substitutes: ["Hallertau Blanc", "Motueka"] },
-  { name: "Motueka", alpha: 7, origin: "Nova Zelândia", price: 480, usage: "Aroma", profile: "Limão fresco, lima, frutas tropicais", history: "Anteriormente chamado de 'B Saaz', foi desenvolvido combinando a herança nobre do Saaz tcheco (1/3 do genoma) com a fertilidade do solo da Nova Zelândia.", substitutes: ["Saaz", "Hallertau Blanc"] },
-  { name: "Sabro", alpha: 14, origin: "EUA", price: 480, usage: "Aroma", profile: "Coco, tangerina, frutas tropicais, cedro", history: "Lançado em 2018 como HBC 438, é diretamente derivado do Neomexicanus, uma subespécie de lúpulo selvagem que cresce nativamente nas montanhas do Novo México.", substitutes: ["Mosaic", "Citra"] },
-  { name: "El Dorado", alpha: 15, origin: "EUA", price: 420, usage: "Aroma", profile: "Pera, melancia, frutas de caroço, doce", history: "Lançado em 2010 pela CLS Farms no Yakima Valley. Destacou-se rapidamente por apresentar um perfil mais doce, lembrando balas de frutas e melancia.", substitutes: ["Citra", "Galaxy"] },
-  { name: "Mandarina Bavaria", alpha: 8.5, origin: "Alemanha", price: 360, usage: "Aroma", profile: "Tangerina, cítrico leve, levemente doce", history: "Criado na Alemanha e lançado em 2012. Possui o Cascade americano em sua linhagem genética, tendo sido criado especificamente para entregar notas modernas e cítricas.", substitutes: ["Cascade", "Amarillo"] },
-  { name: "Strata", alpha: 14, origin: "EUA", price: 500, usage: "Aroma", profile: "Maracujá, morango, resinoso (dank)", history: "Lançado em 2018 pela Oregon State University com a Indie Hops, ganhou popularidade instantânea pelas notas intensas de frutas frescas contrastando com cannabis (dank).", substitutes: ["Citra", "Mosaic"] },
-  { name: "Idaho 7", alpha: 14, origin: "EUA", price: 420, usage: "Duplo Propósito", profile: "Pêssego, chá preto, pinho, cítrico", history: "Lançado em 2015 em Idaho (EUA). É extremamente utilizado para dry-hopping pesado em IPAs por entregar notas exóticas de chá preto e pinho resinoso.", substitutes: ["Simcoe", "Mosaic"] },
-  { name: "Sorachi Ace", alpha: 11, origin: "Japão", price: 400, usage: "Duplo Propósito", profile: "Limão siciliano, endro (dill), capim-limão", history: "Desenvolvido em 1984 pelas Cervejarias Sapporo no Japão. Foi quase esquecido por décadas até ser resgatado e cultivado comercialmente nos EUA no fim dos anos 2000.", substitutes: ["Motueka", "Nelson Sauvin"] },
-  { name: "Northern Brewer", alpha: 9, origin: "Reino Unido / Alemanha", price: 250, usage: "Duplo Propósito", profile: "Amadeirado, terroso, rústico, menta", history: "Criado na Inglaterra em 1934, é hoje plantado no mundo todo e é considerado sinônimo do estilo histórico California Common (Steam Beer), popularizado pela Anchor Brewing.", substitutes: ["Perle", "Magnum"] },
-  { name: "Willamette", alpha: 5, origin: "EUA", price: 280, usage: "Aroma", profile: "Floral, terroso, especiarias suaves", history: "Lançado em 1976 como um substituto cultivado na América para o inglês Fuggle. Tornou-se o pilar histórico para as autênticas Porters e Stouts artesanais americanas.", substitutes: ["Fuggle", "East Kent Goldings"] },
+  { name: "Cascade", alpha: 6, beta: "desconhecido", origin: "EUA", price: 250, usage: "Duplo Propósito", profile: "Floral, cítrico, toranja (grapefruit)", history: "Lançado em 1972 pelo programa do USDA, revolucionou a cerveja artesanal americana. É a assinatura histórica da icônica Sierra Nevada Pale Ale.", substitutes: ["Centennial", "Amarillo"], storage: "desconhecido", source: "estimate" },
+  { name: "Centennial", alpha: 10, beta: "desconhecido", origin: "EUA", price: 280, usage: "Duplo Propósito", profile: "Cítrico, floral, levemente resinoso", history: "Criado em 1974 e lançado em 1990. Ganhou o apelido de 'Super Cascade' por ter um perfil cítrico muito semelhante, mas com quase o dobro de alfa ácido.", substitutes: ["Cascade", "Chinook"], storage: "desconhecido", source: "estimate" },
+  { name: "Chinook", alpha: 13, beta: "desconhecido", origin: "EUA", price: 280, usage: "Duplo Propósito", profile: "Pinho, especiarias, toranja", history: "Lançado em 1985 pelo USDA em Washington, originou-se do cruzamento do lúpulo inglês Petham Golding com uma variedade silvestre americana.", substitutes: ["Columbus (CTZ)", "Northern Brewer"], storage: "desconhecido", source: "estimate" },
+  { name: "Citra", alpha: 12.5, beta: "desconhecido", origin: "EUA", price: 450, usage: "Aroma", profile: "Frutas tropicais, manga, maracujá, cítrico", history: "Lançado em 2008 pela Hop Breeding Company. Seu cruzamento complexo (incluindo Hallertau e East Kent) impulsionou a febre mundial das NEIPAs.", substitutes: ["Mosaic", "Galaxy"], storage: "desconhecido", source: "estimate" },
+  { name: "Mosaic", alpha: 12, beta: "desconhecido", origin: "EUA", price: 450, usage: "Aroma", profile: "Mirtilo, manga, frutas tropicais, terroso", history: "Lançado em 2012 como HBC 369. É geneticamente 'filho' do Simcoe e ganhou esse nome pela vasta complexidade de aromas (um mosaico) que entrega.", substitutes: ["Citra", "Simcoe"], storage: "desconhecido", source: "estimate" },
+  { name: "Simcoe", alpha: 13, beta: "desconhecido", origin: "EUA", price: 420, usage: "Duplo Propósito", profile: "Maracujá, pinho, terroso, cítrico", history: "Lançado em 2000 pela Yakima Chief Ranches. Tornou-se rapidamente o pilar fundamental de amargor e aroma das West Coast IPAs modernas.", substitutes: ["Mosaic", "Chinook"], storage: "desconhecido", source: "estimate" },
+  { name: "Amarillo", alpha: 9, beta: "desconhecido", origin: "EUA", price: 380, usage: "Aroma", profile: "Laranja, tangerina, floral, doce", history: "Descoberto por acaso crescendo na Virgil Gamache Farms nos anos 1990, foi patenteado e lançado em 2003 com exclusividade rigorosa de cultivo.", substitutes: ["Cascade", "Centennial"], storage: "desconhecido", source: "estimate" },
+  { name: "Columbus (CTZ)", alpha: 15, beta: "desconhecido", origin: "EUA", price: 260, usage: "Duplo Propósito", profile: "Picante, terroso, pungente, pinho", history: "Parte do trio CTZ (Columbus, Tomahawk, Zeus). Surgiu nos anos 1980 e é amplamente utilizado por cervejeiros para extração rápida de amargor intenso e dry hopping.", substitutes: ["Chinook", "Magnum"], storage: "desconhecido", source: "estimate" },
+  { name: "Magnum", alpha: 13, beta: "desconhecido", origin: "Alemanha", price: 220, usage: "Amargor", profile: "Limpo, amargor suave, levemente cítrico", history: "Cultivado em Hüll, Alemanha, desde 1980. Descende do lúpulo americano Galena e é muito apreciado por entregar um amargor extremamente limpo e neutro.", substitutes: ["Columbus (CTZ)", "Northern Brewer"], storage: "desconhecido", source: "estimate" },
+  { name: "Hallertau Mittelfrüh", alpha: 4, beta: "desconhecido", origin: "Alemanha", price: 300, usage: "Aroma", profile: "Floral, picante, nobre, levemente terroso", history: "A variedade nobre original e clássica da Baviera. Quase foi extinta por infecções de fungos nos anos 1970, mas sobreviveu pela demanda insubstituível em Lagers.", substitutes: ["Tettnang", "Saaz"], storage: "desconhecido", source: "estimate" },
+  { name: "Hallertau Blanc", alpha: 9, beta: "desconhecido", origin: "Alemanha", price: 380, usage: "Aroma", profile: "Uva branca, vinho, capim-limão, maracujá", history: "Lançado na Alemanha em 2012 para competir com os lúpulos frutados do Novo Mundo. Seu perfil lembra notavelmente o vinho Sauvignon Blanc.", substitutes: ["Nelson Sauvin", "Motueka"], storage: "desconhecido", source: "estimate" },
+  { name: "Tettnang", alpha: 4.5, beta: "desconhecido", origin: "Alemanha", price: 300, usage: "Aroma", profile: "Herbal, picante, floral suave", history: "Um lúpulo nobre com séculos de tradição, cultivado quase exclusivamente na região de Tettnang e essencial para as tradicionais cervejas de trigo alemãs (Weissbier).", substitutes: ["Saaz", "Hallertau Mittelfrüh"], storage: "desconhecido", source: "estimate" },
+  { name: "Perle", alpha: 8, beta: "desconhecido", origin: "Alemanha", price: 260, usage: "Duplo Propósito", profile: "Picante, floral, menta leve", history: "Criado no instituto alemão Hüll em 1978 a partir do inglês Northern Brewer, focado em combinar boa resistência a pragas agrícolas com um perfil de aroma clássico.", substitutes: ["Northern Brewer", "Tettnang"], storage: "desconhecido", source: "estimate" },
+  { name: "Saaz", alpha: 3.5, beta: "desconhecido", origin: "Rep. Tcheca", price: 300, usage: "Aroma", profile: "Terroso, picante, herbal intenso (clássico Pilsner)", history: "O lúpulo clássico da Boêmia com mais de 700 anos de história. É a alma da Pilsner Urquell, definindo o estilo Bohemian Pilsner desde 1842.", substitutes: ["Tettnang", "Hallertau Mittelfrüh"], storage: "desconhecido", source: "estimate" },
+  { name: "East Kent Goldings", alpha: 5, beta: "desconhecido", origin: "Reino Unido", price: 320, usage: "Aroma", profile: "Terroso, mel, floral, especiarias suaves", history: "Desenvolvido na Inglaterra por volta de 1790. É o lúpulo essencial e histórico por trás das autênticas IPAs inglesas e Bitter Ales.", substitutes: ["Fuggle", "Willamette"], storage: "desconhecido", source: "estimate" },
+  { name: "Fuggle", alpha: 4.5, beta: "desconhecido", origin: "Reino Unido", price: 300, usage: "Aroma", profile: "Terroso, amadeirado, levemente frutado", history: "Descoberto casualmente em Kent, na Inglaterra, em 1868 por Richard Fuggle. Foi a variedade mais cultivada no Reino Unido durante o século XIX.", substitutes: ["Willamette", "East Kent Goldings"], storage: "desconhecido", source: "estimate" },
+  { name: "Galaxy", alpha: 14, beta: "desconhecido", origin: "Austrália", price: 520, usage: "Aroma", profile: "Maracujá, pêssego, frutas cítricas intensas", history: "Lançado em 2009 na Austrália (descendente do Perle alemão). Foi o principal responsável por colocar os lúpulos australianos no mapa mundial da cerveja.", substitutes: ["Citra", "Nelson Sauvin"], storage: "desconhecido", source: "estimate" },
+  { name: "Nelson Sauvin", alpha: 12, beta: "desconhecido", origin: "Nova Zelândia", price: 550, usage: "Aroma", profile: "Vinho branco, groselha, uva, maracujá", history: "Lançado no ano 2000, foi batizado em homenagem à uva Sauvignon Blanc devido à incrível semelhança de aroma proveniente do seu terroir neozelandês.", substitutes: ["Hallertau Blanc", "Motueka"], storage: "desconhecido", source: "estimate" },
+  { name: "Motueka", alpha: 7, beta: "desconhecido", origin: "Nova Zelândia", price: 480, usage: "Aroma", profile: "Limão fresco, lima, frutas tropicais", history: "Anteriormente chamado de 'B Saaz', foi desenvolvido combinando a herança nobre do Saaz tcheco (1/3 do genoma) com a fertilidade do solo da Nova Zelândia.", substitutes: ["Saaz", "Hallertau Blanc"], storage: "desconhecido", source: "estimate" },
+  { name: "Sabro", alpha: 14, beta: "desconhecido", origin: "EUA", price: 480, usage: "Aroma", profile: "Coco, tangerina, frutas tropicais, cedro", history: "Lançado em 2018 como HBC 438, é diretamente derivado do Neomexicanus, uma subespécie de lúpulo selvagem que cresce nativamente nas montanhas do Novo México.", substitutes: ["Mosaic", "Citra"], storage: "desconhecido", source: "estimate" },
+  { name: "El Dorado", alpha: 15, beta: "desconhecido", origin: "EUA", price: 420, usage: "Aroma", profile: "Pera, melancia, frutas de caroço, doce", history: "Lançado em 2010 pela CLS Farms no Yakima Valley. Destacou-se rapidamente por apresentar um perfil mais doce, lembrando balas de frutas e melancia.", substitutes: ["Citra", "Galaxy"], storage: "desconhecido", source: "estimate" },
+  { name: "Mandarina Bavaria", alpha: 8.5, beta: "desconhecido", origin: "Alemanha", price: 360, usage: "Aroma", profile: "Tangerina, cítrico leve, levemente doce", history: "Criado na Alemanha e lançado em 2012. Possui o Cascade americano em sua linhagem genética, tendo sido criado especificamente para entregar notas modernas e cítricas.", substitutes: ["Cascade", "Amarillo"], storage: "desconhecido", source: "estimate" },
+  { name: "Strata", alpha: 14, beta: "desconhecido", origin: "EUA", price: 500, usage: "Aroma", profile: "Maracujá, morango, resinoso (dank)", history: "Lançado em 2018 pela Oregon State University com a Indie Hops, ganhou popularidade instantânea pelas notas intensas de frutas frescas contrastando com cannabis (dank).", substitutes: ["Citra", "Mosaic"], storage: "desconhecido", source: "estimate" },
+  { name: "Idaho 7", alpha: 14, beta: "desconhecido", origin: "EUA", price: 420, usage: "Duplo Propósito", profile: "Pêssego, chá preto, pinho, cítrico", history: "Lançado em 2015 em Idaho (EUA). É extremamente utilizado para dry-hopping pesado em IPAs por entregar notas exóticas de chá preto e pinho resinoso.", substitutes: ["Simcoe", "Mosaic"], storage: "desconhecido", source: "estimate" },
+  { name: "Sorachi Ace", alpha: 11, beta: "desconhecido", origin: "Japão", price: 400, usage: "Duplo Propósito", profile: "Limão siciliano, endro (dill), capim-limão", history: "Desenvolvido em 1984 pelas Cervejarias Sapporo no Japão. Foi quase esquecido por décadas até ser resgatado e cultivado comercialmente nos EUA no fim dos anos 2000.", substitutes: ["Motueka", "Nelson Sauvin"], storage: "desconhecido", source: "estimate" },
+  { name: "Northern Brewer", alpha: 9, beta: "desconhecido", origin: "Reino Unido / Alemanha", price: 250, usage: "Duplo Propósito", profile: "Amadeirado, terroso, rústico, menta", history: "Criado na Inglaterra em 1934, é hoje plantado no mundo todo e é considerado sinônimo do estilo histórico California Common (Steam Beer), popularizado pela Anchor Brewing.", substitutes: ["Perle", "Magnum"], storage: "desconhecido", source: "estimate" },
+  { name: "Willamette", alpha: 5, beta: "desconhecido", origin: "EUA", price: 280, usage: "Aroma", profile: "Floral, terroso, especiarias suaves", history: "Lançado em 1976 como um substituto cultivado na América para o inglês Fuggle. Tornou-se o pilar histórico para as autênticas Porters e Stouts artesanais americanas.", substitutes: ["Fuggle", "East Kent Goldings"], storage: "desconhecido", source: "estimate" },
+  { name: "Talus", alpha: 9, beta: "desconhecido", origin: "EUA", manufacturer: "Yakima Chief Hops", price: 480, usage: "Duplo Propósito", profile: "Toranja rosa, frutas tropicais, resina, flores", history: "Cultivar HBC 692, lançada comercialmente como Talus.", substitutes: ["Mosaic", "Simcoe"], storage: "desconhecido", source: "estimate", notes: "Alfa-ácidos típicos estimados; confirmar ficha técnica oficial do fornecedor." },
+  { name: "Nectaron", alpha: 11, beta: "desconhecido", origin: "Nova Zelândia", manufacturer: "NZ Hops", price: 520, usage: "Aroma", profile: "Maracujá, pêssego, abacaxi, cítrico", substitutes: ["Galaxy", "Citra"], storage: "desconhecido", source: "estimate", notes: "Valores típicos estimados; consultar ficha técnica NZ Hops." },
+  { name: "Riwaka", alpha: 5.5, beta: "desconhecido", origin: "Nova Zelândia", manufacturer: "NZ Hops", price: 560, usage: "Aroma", profile: "Maracujá, toranja, cítrico intenso", substitutes: ["Motueka", "Nelson Sauvin"], storage: "desconhecido", source: "estimate", notes: "Valores típicos estimados; consultar ficha técnica NZ Hops." },
+  { name: "Eclipse", alpha: 16, beta: "desconhecido", origin: "Austrália", manufacturer: "Hop Products Australia", price: 520, usage: "Duplo Propósito", profile: "Mandarina, cítrico doce, pinho, mirtilo", substitutes: ["Galaxy", "Citra"], storage: "desconhecido", source: "estimate", notes: "Cultivar HPA-016; valores típicos estimados." },
+  { name: "HBC 586", alpha: 13, beta: "desconhecido", origin: "EUA", manufacturer: "Yakima Chief Hops", price: 500, usage: "Aroma", profile: "Manga, lichia, frutas tropicais, cítrico", substitutes: ["Citra", "Mosaic"], storage: "desconhecido", source: "estimate", notes: "Cultivar experimental; nome comercial pode variar. Valores típicos estimados." },
+  { name: "HBC 1019", alpha: 10, beta: "desconhecido", origin: "EUA", manufacturer: "Yakima Chief Hops", price: 520, usage: "Aroma", profile: "Frutas tropicais, caramelo, uva, cítrico", substitutes: ["Mosaic", "Citra"], storage: "desconhecido", source: "estimate", notes: "Cultivar experimental; valores típicos estimados." },
+  { name: "Cashmere", alpha: 8.5, beta: "desconhecido", origin: "EUA", manufacturer: "Washington State University", price: 380, usage: "Duplo Propósito", profile: "Melão, limão, lima, coco suave, herbal", substitutes: ["Cascade", "Centennial"], storage: "desconhecido", source: "estimate" },
+  { name: "Azacca", alpha: 14, beta: "desconhecido", origin: "EUA", manufacturer: "American Dwarf Hop Association", price: 420, usage: "Duplo Propósito", profile: "Manga, papaia, laranja, pinho", substitutes: ["Citra", "Amarillo"], storage: "desconhecido", source: "estimate" },
+  { name: "Hüll Melon", alpha: 7, beta: "desconhecido", origin: "Alemanha", manufacturer: "Hop Research Center Hüll", price: 380, usage: "Aroma", profile: "Melão honeydew, morango, frutas tropicais", substitutes: ["Mandarina Bavaria", "Hallertau Blanc"], storage: "desconhecido", source: "estimate" },
+  { name: "Barbe Rouge", alpha: 8, beta: "desconhecido", origin: "França", manufacturer: "Comptoir Agricole", price: 420, usage: "Aroma", profile: "Frutas vermelhas, morango, framboesa, cítrico", substitutes: ["Strata", "Hüll Melon"], storage: "desconhecido", source: "estimate" },
 ];
 
-// price in R$ per pack
+// price in R$/pack
 export const yeasts: CatalogYeast[] = [
-  { name: "SafAle US-05", lab: "Fermentis", attenuation: 81, tempMin: 15, tempMax: 24, price: 35 },
-  { name: "SafAle S-04", lab: "Fermentis", attenuation: 75, tempMin: 15, tempMax: 20, price: 35 },
-  { name: "SafAle WB-06", lab: "Fermentis", attenuation: 86, tempMin: 18, tempMax: 24, price: 35 },
-  { name: "SafAle BE-256", lab: "Fermentis", attenuation: 84, tempMin: 15, tempMax: 25, price: 38 },
-  { name: "SafAle T-58", lab: "Fermentis", attenuation: 74, tempMin: 15, tempMax: 24, price: 35 },
-  { name: "SafLager W-34/70", lab: "Fermentis", attenuation: 83, tempMin: 9, tempMax: 15, price: 40 },
-  { name: "SafLager S-23", lab: "Fermentis", attenuation: 82, tempMin: 9, tempMax: 15, price: 40 },
-  { name: "Nottingham", lab: "Lallemand", attenuation: 80, tempMin: 10, tempMax: 22, price: 36 },
-  { name: "Verdant IPA", lab: "Lallemand", attenuation: 77, tempMin: 18, tempMax: 23, price: 42 },
-  { name: "Voss Kveik", lab: "Lallemand", attenuation: 79, tempMin: 25, tempMax: 40, price: 42 },
-  { name: "Belle Saison", lab: "Lallemand", attenuation: 90, tempMin: 15, tempMax: 35, price: 40 },
-  { name: "Novalager", lab: "Lallemand", attenuation: 80, tempMin: 10, tempMax: 20, price: 42 },
-  { name: "WLP001 California Ale", lab: "White Labs", attenuation: 77, tempMin: 18, tempMax: 23, price: 60 },
-  { name: "WY1968 London ESB", lab: "Wyeast", attenuation: 69, tempMin: 18, tempMax: 22, price: 60 },
+  { name: "SafAle US-05", lab: "Fermentis", code: "US-05", type: "Ale", attenuation: 81, tempMin: 15, tempMax: 24, flocculation: "Média", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 35, source: "estimate" },
+  { name: "SafAle S-04", lab: "Fermentis", code: "S-04", type: "Ale", attenuation: 75, tempMin: 15, tempMax: 20, flocculation: "Alta", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 35, source: "estimate" },
+  { name: "SafAle WB-06", lab: "Fermentis", code: "WB-06", type: "Ale", attenuation: 86, tempMin: 18, tempMax: 24, flocculation: "Baixa", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 35, source: "estimate" },
+  { name: "SafAle BE-256", lab: "Fermentis", code: "BE-256", type: "Ale", attenuation: 84, tempMin: 15, tempMax: 25, flocculation: "Alta", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 38, source: "estimate" },
+  { name: "SafAle T-58", lab: "Fermentis", code: "T-58", type: "Ale", attenuation: 74, tempMin: 15, tempMax: 24, flocculation: "Média", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 35, source: "estimate" },
+  { name: "SafAle K-97", lab: "Fermentis", code: "K-97", type: "Ale", attenuation: 81, tempMin: 15, tempMax: 24, flocculation: "Média", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 35, source: "estimate" },
+  { name: "SafAle S-33", lab: "Fermentis", code: "S-33", type: "Ale", attenuation: 70, tempMin: 15, tempMax: 24, flocculation: "Baixa", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 35, source: "estimate" },
+  { name: "SafAle BE-134", lab: "Fermentis", code: "BE-134", type: "Ale", attenuation: 90, tempMin: 18, tempMax: 28, flocculation: "Baixa", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 38, source: "estimate" },
+  { name: "SafLager W-34/70", lab: "Fermentis", code: "W-34/70", type: "Lager", attenuation: 83, tempMin: 9, tempMax: 15, flocculation: "Alta", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 40, source: "estimate" },
+  { name: "SafLager S-23", lab: "Fermentis", code: "S-23", type: "Lager", attenuation: 82, tempMin: 9, tempMax: 15, flocculation: "Alta", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 40, source: "estimate" },
+  { name: "Nottingham", lab: "Lallemand", code: "Nottingham", type: "Ale", attenuation: 80, tempMin: 10, tempMax: 22, flocculation: "Alta", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 36, source: "estimate" },
+  { name: "Verdant IPA", lab: "Lallemand", code: "Verdant IPA", type: "Ale", attenuation: 77, tempMin: 18, tempMax: 23, flocculation: "Média", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 42, source: "estimate" },
+  { name: "Voss Kveik", lab: "Lallemand", code: "Voss Kveik", type: "Ale", attenuation: 79, tempMin: 25, tempMax: 40, flocculation: "Alta", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 42, source: "estimate" },
+  { name: "Belle Saison", lab: "Lallemand", code: "Belle Saison", type: "Ale", attenuation: 90, tempMin: 15, tempMax: 35, flocculation: "Baixa", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 40, source: "estimate" },
+  { name: "Novalager", lab: "Lallemand", code: "NovaLager", type: "Lager", attenuation: 80, tempMin: 10, tempMax: 20, flocculation: "Média", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 42, source: "estimate" },
+  { name: "Diamond Lager", lab: "Lallemand", code: "Diamond", type: "Lager", attenuation: 77, tempMin: 10, tempMax: 15, flocculation: "Alta", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 42, source: "estimate" },
+  { name: "Mangrove Jack's M21 Belgian Wit", lab: "Mangrove Jack's", code: "M21", type: "Ale", attenuation: 72, tempMin: 18, tempMax: 25, flocculation: "Baixa", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 38, source: "estimate" },
+  { name: "Mangrove Jack's M44 US West Coast", lab: "Mangrove Jack's", code: "M44", type: "Ale", attenuation: 81, tempMin: 18, tempMax: 23, flocculation: "Alta", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 38, source: "estimate" },
+  { name: "WLP001 California Ale", lab: "White Labs", code: "WLP001", type: "Ale", attenuation: 77, tempMin: 18, tempMax: 23, flocculation: "Média", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 60, source: "estimate" },
+  { name: "WLP300 Hefeweizen Ale", lab: "White Labs", code: "WLP300", type: "Ale", attenuation: 74, tempMin: 20, tempMax: 22, flocculation: "Baixa", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 60, source: "estimate" },
+  { name: "WLP500 Monastery Ale", lab: "White Labs", code: "WLP500", type: "Ale", attenuation: 77, tempMin: 18, tempMax: 22, flocculation: "Média", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 60, source: "estimate" },
+  { name: "WY1968 London ESB", lab: "Wyeast", code: "1968", type: "Ale", attenuation: 69, tempMin: 18, tempMax: 22, flocculation: "Muito Alta", alcoholTolerance: "desconhecido", pitchRate: "desconhecido", price: 60, source: "estimate" },
 ];
 
 export const miscs: CatalogMisc[] = [
-  { name: "Whirlfloc", use: "Fervura", price: 2 },
-  { name: "Musgo Irlandês", use: "Fervura", price: 1 },
-  { name: "Nutriente de Levedura", use: "Fervura", price: 3 },
-  { name: "Gipsita (CaSO₄)", use: "Mostura", price: 0.1 },
-  { name: "Cloreto de Cálcio (CaCl₂)", use: "Mostura", price: 0.1 },
-  { name: "Ácido Lático 85%", use: "Mostura", price: 0.5 },
-  { name: "Casca de Laranja", use: "Fervura", price: 0.2 },
-  { name: "Semente de Coentro", use: "Fervura", price: 0.2 },
+  { name: "Whirlfloc", use: "Fervura", price: 2, category: "Clarificante", source: "estimate" },
+  { name: "Musgo Irlandês", use: "Fervura", price: 1, category: "Clarificante", source: "estimate" },
+  { name: "Nutriente de Levedura", use: "Fervura", price: 3, category: "Nutriente", source: "estimate" },
+  { name: "Gipsita (CaSO₄)", use: "Mostura", price: 0.1, category: "Sal", source: "estimate" },
+  { name: "Cloreto de Cálcio (CaCl₂)", use: "Mostura", price: 0.1, category: "Sal", source: "estimate" },
+  { name: "Ácido Lático 85%", use: "Mostura", price: 0.5, category: "Ácido", source: "estimate" },
+  { name: "Casca de Laranja", use: "Fervura", price: 0.2, category: "Especiaria", source: "estimate" },
+  { name: "Semente de Coentro", use: "Fervura", price: 0.2, category: "Especiaria", source: "estimate" },
+  { name: "Lactose (adjunto)", use: "Fervura", price: 0.03, category: "Açúcar/Adjunto", source: "estimate", notes: "Não fermentável; indicado para cervejas doces. Também disponível como fermentável." },
+  { name: "Dextrose (priming/adjunto)", use: "Envase/Fervura", price: 0.012, category: "Açúcar/Adjunto", source: "estimate", notes: "Também disponível como fermentável." },
+  { name: "Açúcar Invertido (adjunto)", use: "Fervura", price: 0.015, category: "Açúcar/Adjunto", source: "estimate", notes: "Também disponível como fermentável." },
+  { name: "Mel (adjunto)", use: "Fervura/Primária", price: 0.04, category: "Adjunto", source: "estimate", notes: "Aroma depende da florada; também disponível como fermentável." },
+  { name: "Purê de Frutas", use: "Secundária", price: 0.05, category: "Fruta", source: "estimate", notes: "Tipo, acidez e açúcar variam; ajustar conforme produto real (configurável pelo usuário)." },
+  { name: "Especiarias (mix)", use: "Fervura/Secundária", price: 0.5, category: "Especiaria", source: "user", notes: "Categoria genérica; especifique tipo e dose conforme receita." },
+  { name: "Casca de Arroz", use: "Mostura", price: 0.02, category: "Auxiliar de filtração", source: "estimate", notes: "Não contribui significativamente com extrato; auxilia lauter." },
+  { name: "Flocos de Cereais (mix)", use: "Mostura", price: 0.02, category: "Adjunto", source: "estimate", notes: "Categoria genérica; prefira ingredientes específicos (aveia, trigo, etc.)." },
 ];
 
 export interface BjcpStyleDetail {

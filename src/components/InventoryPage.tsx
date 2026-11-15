@@ -71,10 +71,12 @@ export default function InventoryPage() {
             <div className="space-y-1"><Label>{def.priceLabel}</Label><Input type="number" step="0.01" value={form.price} onChange={e => setForm({ ...form, price: num(e.target.value) })} /></div>
             {form.kind === "lupulo" && (() => { const h = hops.find(x => x.name === form.name); return h ? (
               <div className="sm:col-span-5 rounded-md border border-border bg-muted/40 p-3 space-y-1 text-xs text-muted-foreground">
-                <div><b className="text-foreground">Uso:</b> {h.usage} · {h.origin} · {h.alpha}% AA</div>
+                <div><b className="text-foreground">Uso:</b> {h.usage} · {h.origin || "origem desconhecida"} · {h.alpha}% AA{h.beta !== undefined ? ` · β ${h.beta}%` : ""}</div>
                 <div><b className="text-foreground">Perfil:</b> {h.profile}</div>
-                <div><b className="text-foreground">Substitutos:</b> {h.substitutes.join(", ")}</div>
-                <div><b className="text-foreground">História:</b> {h.history}</div>
+                <div><b className="text-foreground">Substitutos:</b> {(h.substitutes ?? []).join(", ") || "desconhecidos"}</div>
+                {h.history && <div><b className="text-foreground">História:</b> {h.history}</div>}
+                {h.storage && <div><b className="text-foreground">Armazenamento:</b> {h.storage}</div>}
+                {h.source && <div><b className="text-foreground">Fonte:</b> {h.source === "official" ? "oficial" : h.source === "estimate" ? "estimativa" : h.source === "user" ? "usuário" : "desconhecida"}</div>}
               </div>
             ) : null; })()}
             <Button onClick={submit} className="sm:col-span-2">Salvar</Button>
@@ -94,10 +96,10 @@ export default function InventoryPage() {
               {i.amount <= i.minAmount && <Badge variant="destructive" className="mt-1">Estoque baixo</Badge>}
               {hopInfo && (
                 <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                  <div><b className="text-foreground">Uso:</b> {hopInfo.usage} · {hopInfo.origin}</div>
+                  <div><b className="text-foreground">Uso:</b> {hopInfo.usage} · {hopInfo.origin || "origem desconhecida"}</div>
                   <div><b className="text-foreground">Perfil:</b> {hopInfo.profile}</div>
-                  <div><b className="text-foreground">Substitutos:</b> {hopInfo.substitutes.join(", ")}</div>
-                  <div><b className="text-foreground">História:</b> {hopInfo.history}</div>
+                  <div><b className="text-foreground">Substitutos:</b> {(hopInfo.substitutes ?? []).join(", ") || "desconhecidos"}</div>
+                  {hopInfo.history && <div><b className="text-foreground">História:</b> {hopInfo.history}</div>}
                 </div>
               )}
             </div>
