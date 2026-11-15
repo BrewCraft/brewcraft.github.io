@@ -127,7 +127,7 @@ export interface MashPhInput {
 export function mashPhTool(i: MashPhInput) {
   const profile = i.salts && Object.keys(i.salts).length ? { ...i.source } : i.source;
   // apply salts inline to get mash profile
-  let mashProfile = { ...profile } as WaterProfile;
+  const mashProfile = { ...profile } as WaterProfile;
   const salts = i.salts ?? {};
   // reuse estimateMashPh with adjusted water via apply-like contribution
   // simple local apply
@@ -174,14 +174,14 @@ export function optimizeRecipe(i: OptimizerInput) {
   const targetEbc = Math.min(style.srm[1] * 1.97, Math.max(style.srm[0] * 1.97, i.targetEbc));
 
   const fermPool = pickAvailable(catalogFermentables, i.availableFermentables, catalogFermentables.slice(0, 40));
-  const base = fermPool.find(f => f.type === "Base" || /pilsen|pale|pilsner/i.test(f.name)) || fermPool[0];
+  const base = fermPool.find(f => /pilsen|pale|pilsner|golden promise|maris otter/i.test(f.name)) || fermPool[0];
   const specialty = fermPool.find(f => f !== base && (f.color > 10 || /caramel|crystal|munich|vienna|cara/i.test(f.name))) || fermPool[1] || base;
   const dark = fermPool.find(f => f !== base && f.color >= 100) || specialty;
 
   const volPost = Math.max(1, i.batchL + 1);
   const totalPoints = (targetOg - 1) * 1000 * volPost;
   const basePot = (base.potential - 1) * 1000 * 8.3454 * eff;
-  let baseKg = basePot > 0 ? (totalPoints * 0.9) / basePot : 4;
+  const baseKg = basePot > 0 ? (totalPoints * 0.9) / basePot : 4;
   let specKg = targetEbc > 30 ? Math.max(0.1, baseKg * 0.12) : targetEbc > 15 ? Math.max(0.05, baseKg * 0.07) : Math.max(0, baseKg * 0.03);
   let darkKg = targetEbc > 60 ? Math.max(0.05, baseKg * 0.06) : 0;
   // adjust color roughly
@@ -225,7 +225,7 @@ export function optimizeRecipe(i: OptimizerInput) {
   if (ibuApprox < style.ibu[0] || ibuApprox > style.ibu[1]) warnings.push("IBU estimado fora da faixa do estilo; ajuste lúpulos.");
   return {
     style: { code: style.code, name: style.name, ranges: { og: style.og, fg: style.fg, ibu: style.ibu, srm: style.srm, abv: style.abv } },
-    fermentables, hops, yeast: yeast ? { name: yeast.name, attenuation: yeast.attenuation, form: yeast.form } : null,
+    fermentables, hops, yeast: yeast ? { name: yeast.name, attenuation: yeast.attenuation, type: yeast.type } : null,
     estimates: { og: Math.round(og * 10000) / 10000, fg: Math.round(fg * 10000) / 10000, abv: Math.round(abv * 100) / 100, ibu: Math.round(ibuApprox * 10) / 10, srm: Math.round(srm * 10) / 10, ebc: Math.round(srm * 1.97 * 10) / 10, grainKg: Math.round(grainTotal * 100) / 100 },
     notes: ["Sugestão estimada a partir de catálogo, estilo e limitações informadas; valide com seu equipamento e ingredientes.", ...warnings],
   };

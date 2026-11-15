@@ -10,7 +10,7 @@ import { ArrowLeft, Check, Pause, Play, RotateCcw, Trash2, PackageMinus } from "
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 import { batchAbv, batchStatuses, boilSchedule, deductInventory, recipeStats, type Batch } from "@/lib/recipe-calc";
-import { useSettings } from "@/lib/settings";
+import { readSettings, useSettings } from "@/lib/settings";
 import { fmt, uid, useBatches, useInventory } from "@/lib/store";
 
 const mmss = (s: number) => `${String(Math.floor(Math.max(0, s) / 60)).padStart(2, "0")}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, "0")}`;
@@ -95,7 +95,12 @@ export default function BatchDetailPage() {
   const update = (patch: Partial<Batch>) => saveBatches(batches.map(x => (x.id === b.id ? { ...x, ...patch } : x)));
   const stats = recipeStats(b.recipe);
   const statusIdx = batchStatuses.findIndex(s => s.id === b.status);
-  const deduct = () => { saveInventory(deductInventory(b.recipe, inventory)); update({ inventoryDeducted: true }); toast.success("Ingredientes descontados do inventário"); };
+  const deduct = () => {
+    const allowNegative = readSettings().negativeStock === true;
+    saveInventory(deductInventory(b.recipe, inventory, allowNegative));
+    update({ inventoryDeducted: true });
+    toast.success("Ingredientes descontados do inventário");
+  };
   const setStatus = (s: Batch["status"]) => {
     update({ status: s });
     if (s === "brassagem" && !b.inventoryDeducted && confirm("Descontar os ingredientes do inventário agora?")) deduct();

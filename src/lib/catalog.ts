@@ -27,6 +27,7 @@ export interface CatalogHop {
   substitutes?: string[];
   storage?: string;
   source?: DataSource;
+  notes?: string;
 }
 
 export interface CatalogYeast {

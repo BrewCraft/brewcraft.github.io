@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Calculator, ChevronRight, RotateCcw, Search, ArrowLeftRight, Star, Thermometer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,15 +36,16 @@ function UnitConverter({ fixed, locale }: { fixed: CalculatorDefinition["convert
   </>;
 }
 function CalculationForm({ calculator, locale }: { calculator: CalculatorDefinition; locale: string }) {
-  const defaults = Object.fromEntries(calculator.fields.map(field => [field.id, field.initial]));
+  const defaults = useMemo(() => Object.fromEntries(calculator.fields.map(field => [field.id, field.initial])), [calculator]);
   const [values, setValues] = useState<Values>(defaults);
-  let error = validateCalculator(calculator, values);
+  useEffect(() => setValues(defaults), [defaults]);
+  const error = validateCalculator(calculator, values);
   const results = error ? [] : calculator.calculate(values);
-  if (!error && results.some(result => !Number.isFinite(result.value))) error = "Não foi possível calcular com estes valores. Confira as entradas.";
+  const finalError = !error && results.some(result => !Number.isFinite(result.value)) ? "Não foi possível calcular com estes valores. Confira as entradas." : error;
   return <>
     <div className="flex justify-end mb-4"><Button size="icon" variant="ghost" title="Restaurar valores" aria-label="Restaurar valores" onClick={() => setValues(defaults)}><RotateCcw /></Button></div>
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{calculator.fields.map(field => <div key={field.id} className="space-y-2 min-w-0"><Label htmlFor={`calc-${field.id}`} className="leading-relaxed">{field.label}</Label>{field.options ? <Select value={values[field.id]} onValueChange={value => setValues(old=>({...old,[field.id]:value}))}><SelectTrigger id={`calc-${field.id}`} className="h-auto min-h-10 text-left [&>span]:whitespace-normal"><SelectValue /></SelectTrigger><SelectContent>{field.options.map(option=><SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select> : <Input id={`calc-${field.id}`} inputMode="decimal" value={values[field.id]} onChange={e=>setValues(old=>({...old,[field.id]:e.target.value}))} />}</div>)}</div>
-    <ResultPanel locale={locale} results={results} error={error} />
+    <ResultPanel locale={locale} results={results} error={finalError} />
     {calculator.note && <p className="text-xs text-muted-foreground leading-relaxed border-t border-border pt-4 mt-6">{calculator.note}</p>}
   </>;
 }

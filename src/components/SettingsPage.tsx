@@ -8,7 +8,7 @@ import { Download, Upload, Trash2, Database, CheckCircle2, SlidersHorizontal, Cl
 import SettingsPreferences from "@/components/SettingsPreferences";
 import { defaultSettings, normalizeSettings } from "@/lib/settings-model";
 import { readSettings, saveSettings } from "@/lib/settings";
-import { restoreBackup } from "@/lib/backup";
+import { makeBackup, restoreBackup } from "@/lib/backup";
 import {
   cloudProviderLabels,
   connectProvider,
@@ -167,13 +167,7 @@ export default function SettingsPage() {
   const totalItems = Object.values(counts).reduce((sum, list) => sum + list.length, 0);
 
   const exportData = () => {
-    const payload = {
-      app: "brewcraft-web",
-      version: 2,
-      exportedAt: new Date().toISOString(),
-      data: readAll(),
-      settings: readSettings(),
-    };
+    const payload = makeBackup();
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -187,21 +181,12 @@ export default function SettingsPage() {
   const importData = async (file: File) => {
     try {
       const text = await file.text();
-      const parsed = JSON.parse(text) as Record<string, unknown>;
-      const data = (parsed.data ?? parsed) as Record<string, unknown>;
-      const keys = Object.keys(data).filter((k) => k in STORAGE_KEYS && Array.isArray(data[k]));
-      if (keys.length === 0) {
-        setImportMsg({ ok: false, text: "Arquivo não parece um backup do BrewCraft. Nada foi alterado." });
-        return;
-      }
-      if (parsed.settings && typeof parsed.settings === "object") {
-        saveSettings(normalizeSettings(parsed.settings));
-      }
-      writeAll(data as Backup);
+      const parsed = JSON.parse(text) as unknown;
+      const restored = restoreBackup(parsed);
       setCounts(readAll());
-      setImportMsg({ ok: true, text: `Backup restaurado: ${keys.length} seções importadas.` });
-    } catch {
-      setImportMsg({ ok: false, text: "Não consegui ler o arquivo. Verifique se é um backup .json válido." });
+      setImportMsg({ ok: true, text: `Backup restaurado com segurança: ${restored} seções validadas.` });
+    } catch (e) {
+      setImportMsg({ ok: false, text: e instanceof Error ? e.message : "Não consegui restaurar o backup. Nada foi alterado." });
     }
   };
 

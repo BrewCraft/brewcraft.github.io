@@ -422,14 +422,14 @@ export default function AiAssistant() {
       } else {
         const action = extractJsonObject(finalText);
         if (action && typeof action.action === "string") {
-          const act = String(action.action).toUpper();
+          const act = String(action.action).toUpperCase();
           if (act === "CALCULATE" || act === "RUN_CALCULATOR") {
             const calcId = String(action.payload?.calculatorId ?? action.payload?.id ?? action.calculatorId ?? "");
             const values = (action.payload?.values ?? action.values ?? {}) as Record<string, string>;
             const res = executeCalculator(calcId, values);
             const msg = res.ok
               ? `${action.message || "Cálculo executado pelo BrewCraft."}\n\n**${res.calculator} (função real):**\n` + res.results.map(r => `- ${r.label}: ${fmt(r.value, r.digits ?? 2)} ${r.unit || ""}`).join("\n")
-              : `${action.message || "Falha ao executar cálculo."}\n\nErro: ${res.error}`;
+              : `${action.message || "Falha ao executar cálculo."}\n\nErro: ${(res as { error: string }).error}`;
             setMessages((prev) => {
               const next = [...prev];
               const lastIndex = next.length - 1;
@@ -630,19 +630,19 @@ export default function AiAssistant() {
 
       if (kind === "PROPOSE_CREATE_RECIPE" || kind === "CREATE_RECIPE") {
         const p = proposeRecipeCreate(payload.recipe && typeof payload.recipe === "object" ? payload.recipe as Record<string, unknown> : payload, { settings, inventory });
-        if (!p.ok) { setPendingProposal(null); setProposalError(p.error); return { displayMessage: `${baseMsg}\n\n⚠️ Não foi possível preparar a proposta: ${p.error}${p.missingInfo?.length ? `\nFaltam: ${p.missingInfo.join(", ")}.` : ""}\nResponda com as informações necessárias para eu montar a proposta.` }; }
+        if (!p.ok) { const err = p as { error: string; missingInfo?: string[] }; setPendingProposal(null); setProposalError(err.error); return { displayMessage: `${baseMsg}\n\n⚠️ Não foi possível preparar a proposta: ${err.error}${err.missingInfo?.length ? `\nFaltam: ${err.missingInfo.join(", ")}.` : ""}\nResponda com as informações necessárias para eu montar a proposta.` }; }
         setPendingProposal(p.proposal); setProposalError(null);
         return { displayMessage: `${baseMsg}\n\n📋 Proposta pronta para confirmação (nenhuma alteração aplicada ainda). Revise antes/depois e aprove ou rejeite abaixo.` };
       }
       if (kind === "PROPOSE_UPDATE_RECIPE" || kind === "UPDATE_RECIPE") {
         const p = proposeRecipeUpdate(payload.recipe && typeof payload.recipe === "object" ? payload.recipe as Record<string, unknown> : payload, recipes, { settings, inventory });
-        if (!p.ok) { setPendingProposal(null); setProposalError(p.error); return { displayMessage: `${baseMsg}\n\n⚠️ Não foi possível preparar a alteração: ${p.error}${p.missingInfo?.length ? `\nFaltam: ${p.missingInfo.join(", ")}.` : ""}` }; }
+        if (!p.ok) { const err = p as { error: string; missingInfo?: string[] }; setPendingProposal(null); setProposalError(err.error); return { displayMessage: `${baseMsg}\n\n⚠️ Não foi possível preparar a alteração: ${err.error}${err.missingInfo?.length ? `\nFaltam: ${err.missingInfo.join(", ")}.` : ""}` }; }
         setPendingProposal(p.proposal); setProposalError(null);
         return { displayMessage: `${baseMsg}\n\n📋 Alteração proposta (não aplicada). Revise antes/depois e confirme para aplicar.` };
       }
       if (kind === "PROPOSE_ADD_INVENTORY" || kind === "ADD_INVENTORY") {
         const p = proposeInventoryAdd(payload, inventory);
-        if (!p.ok) { setPendingProposal(null); setProposalError(p.error); return { displayMessage: `${baseMsg}\n\n⚠️ Não foi possível preparar a alteração de inventário: ${p.error}${p.missingInfo?.length ? `\nFaltam: ${p.missingInfo.join(", ")}.` : ""}` }; }
+        if (!p.ok) { const err = p as { error: string; missingInfo?: string[] }; setPendingProposal(null); setProposalError(err.error); return { displayMessage: `${baseMsg}\n\n⚠️ Não foi possível preparar a alteração de inventário: ${err.error}${err.missingInfo?.length ? `\nFaltam: ${err.missingInfo.join(", ")}.` : ""}` }; }
         setPendingProposal(p.proposal); setProposalError(null);
         return { displayMessage: `${baseMsg}\n\n📋 Alteração de inventário proposta (não aplicada). Confirme para aplicar.` };
       }
@@ -662,8 +662,9 @@ export default function AiAssistant() {
     if (!pendingProposal) return;
     const result = applyProposal(pendingProposal, { recipes, inventory });
     if (!result.ok) {
-      toast({ title: "Operação não aplicada", description: result.error, variant: "destructive" });
-      const msg: Message = { role: "model", content: `❌ Alteração não aplicada: ${result.error}` };
+      const err = result as { error: string };
+      toast({ title: "Operação não aplicada", description: err.error, variant: "destructive" });
+      const msg: Message = { role: "model", content: `❌ Alteração não aplicada: ${err.error}` };
       const next = [...messages, msg]; setMessages(next); persistChatHistory(next, activeChatId ?? undefined);
       return;
     }
