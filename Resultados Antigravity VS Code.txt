@@ -648,4 +648,65 @@ Existing calculators preserved; registry total 30. Copilot/assistant integration
 - `node --experimental-transform-types --import ./scripts/test-register.mjs --test src/lib/*.test.ts` → 106 tests, 42 suites, **0 failures**
 - `npm run build` → **success** (`vite build`, built in ~20s; pre-existing chunk-size warning only)
 
+## 1. Segurança (revisão e correções)
 
+**Exposição de chaves / `VITE_*`**
+- **Encontrado:** `VITE_GEMINI_API_KEY` é lida no cliente (`src/components/AiAssistant.tsx`, usada em `GeminiService` e `use-gemini-live.ts` via WebSocket URL). `VITE_DROPBOX/GOOGLE/ONEDRIVE_CLIENT_ID` e `VITE_GOOGLE_PICKER_API_KEY/APP_ID` usados em `src/lib/cloud-sync.ts`. Em Vite, `VITE_*` é embutido no bundle do frontend (qualquer pessoa com acesso ao app/build pode extrair a chave Gemini/OAuth client IDs). **Não declarado como seguro.**
+- **Correção aplicada:** nenhuma chave adicionada ao código-fonte; `.env.example` mantido sem segredos. O assistente só inicializa/usa chave quando configurada e falha de forma controlada.
+- **Proposta (não implementada para preservar offline/standalone):** mover chamadas Gemini para backend/proxy (server-side) com chave em segredo de servidor, rate-limit e escopo mínimo; manter um modo “IA desativada”/fallback local offline. Requer mudança de arquitetura/infra e quebraria o uso puramente estático/offline atual — **não aplicada**.
+
+**Dados locais, sync e validação**
+- **Encontrado:** tokens/sessões de nuvem, backups, receitas/inventário/chats persistidos em `localStorage` (acesso a scripts no mesmo contexto/origem). Sync automático pode enviar dados quando habilitado/conectado.
+- **Encontrado/corrigido:** restauração de backup na UI de Configurações fazia parse/merge pouco restrito. **Corrigido** para usar `makeBackup()`/`restoreBackup()` (`src/lib/backup.ts`) com validação de estrutura/itens, snapshot pré-restauração e rejeição de payload inválido sem sobrescrever (`src/components/SettingsPage.tsx`).
+- **IA → mutações:** mantido fluxo controlado (propostas + confirmação explícita antes de `applyProposal`, validação/normalização em `src/lib/ai-copilot.ts`, parsing tolerante de JSON cercado). **Nenhuma mutação silenciosa por resposta da IA** (evidenciado em testes). `UPDATE_SETTING` segue ação controlada.
+- **Risco residual:** proteção depende do ambiente do navegador/origem (XSS/extensões maliciosas podem acessar `localStorage`). Não há criptografia at-rest no cliente.
+
+## 2. Integridade das receitas
+- Criação/edição, preservação de ingredientes/quantidades e recálculo após alterações validados por testes de integração (`src/lib/audit-integration.test.ts`: stats/OG/IBU/SRM atualizam, ingredientes preservados). Receitas “antigas”/mínimas permanecem calculáveis; volumes coerentes com equipamento.
+- Importação/exportação: `restoreBackup` valida coleções/objetos e preserva dados válidos; export usa `makeBackup` (versão/dados/settings). Coberto por testes (preserva campos/quantidades, rejeita inválidos). Batches armazenam snapshot da receita (comportamento existente preservado).
+
+## 3. Integridade do inventário
+- Adição/remoção/atualização e integração com receitas/custos (`recipeCost`, `shoppingList`) validados em testes.
+- **Correção:** desconto ao iniciar brassagem (`src/components/BatchDetailPage.tsx`) agora respeita a preferência **“Permitir estoque negativo”** (`readSettings().negativeStock`) ao chamar `deductInventory(..., allowNegative)`; por padrão continua sem estoque negativo.
+- Limitação: persistência é local e sem transações multi-aba/concorrência forte.
+
+## 4. Testes integrados (criados/adicionados)
+**`src/lib/audit-integration.test.ts`** cobre:
+- Receitas ↔ calculadoras (recalculo/OG/IBU/SRM, receitas antigas/equipamento/volumes).
+- Receitas ↔ inventário e inventário ↔ custos (`shoppingList`, add/update/remove, `recipeCost`).
+- Gemini/copiloto ↔ receitas/calculadoras/inventário: contexto com dados reais, execução real de calculadoras do registro, propostas para criar/editar receita e adicionar inventário, **aplicação somente após `applyProposal` (confirmação)**, rejeição de entradas incompletas/inválidas, extração de JSON.
+- Química da água ↔ receitas/maltes (`applySalts`, `estimateMashPh`) e configurações/equipamento ↔ volumes/cálculos.
+- Backup import/export: preservação e rejeição de estruturas inválidas.
+
+**Ferramentas novas (implementadas antes desta auditoria, mantidas/testadas):** `src/lib/brewing-tools.ts` + 7 calculadoras no `src/lib/calculator-registry.ts` (`volumes_full`, `efficiency_detailed`, `dry_hopping`, `carbonation_advanced`, `costs`, `mash_ph`, `recipe_optimizer`) com `src/lib/brewing-tools.test.ts`; integradas ao registro/assistente via execução de calculadoras reais.
+
+## 5. Interface e usabilidade
+- **Corrigido:** `CalculatorsPage` agora reinicializa/restaura valores ao trocar de calculadora de forma consistente (`useMemo/useEffect`), mantendo validação, unidades explícitas, resultados, notas e reset.
+- Revisão pontual: botões/fluxos principais (backup/restauração com mensagens, confirmação de propostas IA, desconto de inventário, calculadoras com erros de validação) presentes. **Não realizada** verificação manual/visual responsiva em navegador nem auditoria exaustiva de todos os estados de carregamento/rolagem; identidade visual preservada (sem reformulação).
+
+## 6. Desempenho
+- **Corrigido (baixo risco):** memoização de defaults e sincronização de estado no formulário de calculadoras para evitar trabalho inconsistente ao trocar calculadora.
+- **Observado (não alterado):** bundle de produção grande (~1,21 MB JS minificado / ~356 KB gzip; aviso do Vite) e dependências de UI/gráficos já presentes; sem code-splitting/lazy-loading introduzido para não alterar comportamento. Nenhuma dependência pesada adicionada.
+
+## 7. Testes finais executados
+
+| Verificação | Comando | Resultado |
+|---|---|---|
+| TypeScript (app) | `node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.app.json` | **Aprovado** (0 erros; corrigidos erros de tipo em `AiAssistant.tsx`, `brewing-tools.ts`, `catalog.ts`) |
+| Testes unitários/integração (projeto) | `node --experimental-transform-types --import ./scripts/test-register.mjs --test src/lib/*.test.ts` | **Aprovado** — 115 testes, 46 suites, 0 falhas |
+| ESLint | `npm run lint` | **Reprovado** — 66 problemas (58 erros, 8 avisos): `@typescript-eslint/no-explicit-any` majoritariamente em `src/components/AiAssistant.tsx`, `src/lib/ai-copilot.ts`, `src/lib/audit-integration.test.ts`; avisos `react-refresh/only-export-components` em componentes UI e `react-hooks/exhaustive-deps` em `use-gemini-live.ts`; 2 `prefer-const` em `brewing-tools.ts` **corrigidos**. Não saneados integralmente por serem em grande parte pré-existentes/pervasivos e exigirem refatoração ampla. |
+| Build de produção | `npm run build` | **Aprovado** (`vite build`, ~20s; aviso de chunk > 500 kB) |
+| Build standalone | não executado nesta rodada | script disponível: `npm run build:standalone` (vite-plugin-singlefile) |
+
+## 8. Problemas ainda existentes / limitações conhecidas
+- **Chave Gemini exposta no cliente** (e fluxo Live via WebSocket no browser) enquanto usar `VITE_GEMINI_API_KEY` sem backend; client IDs OAuth também no bundle — mitigação real exige proxy/backend.
+- **Lint não limpo** (erros `no-explicit-any` e avisos listados acima).
+- **Armazenamento local sem criptografia**; sync/tokens dependem de configuração do usuário e segurança da origem.
+- **Sem validação manual de UI/responsividade/acessibilidade** e sem E2E/browser automation nesta auditoria.
+- **Build standalone e `tsc -p tsconfig.node.json`/checagens extras** não reexecutados aqui (apenas tsc app + build + testes + lint).
+- Bundle grande e ausência de splitting; desempenho em máquinas modestas não medido empiricamente.
+
+## Avaliação geral de estabilidade
+- **Cálculo/dados/integridade (receitas, inventário, custos, água/equipamento, calculadoras, backup/restore, propostas IA com confirmação):** evidência positiva pelos testes automatizados aprovados (115/115), typecheck e build de produção. Funcionalidades existentes preservadas nas áreas alteradas.
+- **Segurança:** **não pode ser declarada totalmente segura** (exposição de chave Gemini no frontend, dados em `localStorage`, lint/qualidade parcial). Adequada apenas com as limitações acima e, idealmente, com backend para segredos de IA.
+- **Conclusão:** estável nas camadas lógicas cobertas por testes/build; há riscos e pendências conhecidas (segurança de segredos no cliente, lint, validação visual/manual e tamanho de bundle) que impedem afirmar correção/segurança total.

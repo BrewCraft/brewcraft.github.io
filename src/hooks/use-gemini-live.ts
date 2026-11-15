@@ -203,7 +203,7 @@ export function useGeminiLive({
       setIsConnecting(false);
       onError?.(err instanceof Error ? err : new Error("Failed to initialize audio or websocket"));
     }
-  }, [apiKey, model, systemInstruction, isActive, isConnecting, onConnected, onDisconnected, onError, onResponse, playNextInQueue, disconnect]);
+  }, [apiKey, model, systemInstruction, isActive, isConnecting, onConnected, onError, onResponse, playNextInQueue, disconnect]);
 
   useEffect(() => {
     return () => {

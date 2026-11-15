@@ -424,12 +424,14 @@ export default function AiAssistant() {
         if (action && typeof action.action === "string") {
           const act = String(action.action).toUpperCase();
           if (act === "CALCULATE" || act === "RUN_CALCULATOR") {
-            const calcId = String(action.payload?.calculatorId ?? action.payload?.id ?? action.calculatorId ?? "");
-            const values = (action.payload?.values ?? action.values ?? {}) as Record<string, string>;
+            const actionPayload = (action.payload && typeof action.payload === "object" ? action.payload : {}) as Record<string, unknown>;
+            const calcId = String(actionPayload.calculatorId ?? actionPayload.id ?? action.calculatorId ?? "");
+            const values = (actionPayload.values ?? action.values ?? {}) as Record<string, string>;
             const res = executeCalculator(calcId, values);
+            const actionMsg = typeof action.message === "string" ? action.message : "";
             const msg = res.ok
-              ? `${action.message || "Cálculo executado pelo BrewCraft."}\n\n**${res.calculator} (função real):**\n` + res.results.map(r => `- ${r.label}: ${fmt(r.value, r.digits ?? 2)} ${r.unit || ""}`).join("\n")
-              : `${action.message || "Falha ao executar cálculo."}\n\nErro: ${(res as { error: string }).error}`;
+              ? `${actionMsg || "Cálculo executado pelo BrewCraft."}\n\n**${res.calculator} (função real):**\n` + res.results.map(r => `- ${r.label}: ${fmt(r.value, r.digits ?? 2)} ${r.unit || ""}`).join("\n")
+              : `${actionMsg || "Falha ao executar cálculo."}\n\nErro: ${(res as { error: string }).error}`;
             setMessages((prev) => {
               const next = [...prev];
               const lastIndex = next.length - 1;
@@ -621,11 +623,12 @@ export default function AiAssistant() {
     } as Recipe & { og: number; fg: number; abv: number; ibu: number; srm: number };
   };
 
-  const handleAiActionObject = (action: any): { displayMessage: string } => {
+  const handleAiActionObject = (action: unknown): { displayMessage: string } => {
     try {
-      const kind = String(action?.action ?? "").toUpperCase();
-      const payload = (action?.payload && typeof action.payload === "object") ? action.payload as Record<string, unknown> : {};
-      const baseMsg = typeof action?.message === "string" ? action.message : "Proposta gerada pela IA.";
+      const a = (action && typeof action === "object" ? action : {}) as Record<string, unknown>;
+      const kind = String(a.action ?? "").toUpperCase();
+      const payload = (a.payload && typeof a.payload === "object") ? a.payload as Record<string, unknown> : {};
+      const baseMsg = typeof a.message === "string" ? a.message : "Proposta gerada pela IA.";
       const settings = readSettings();
 
       if (kind === "PROPOSE_CREATE_RECIPE" || kind === "CREATE_RECIPE") {
@@ -930,41 +933,45 @@ export default function AiAssistant() {
                     <p className="font-medium">Ingredientes/itens afetados</p>
                     <p className="text-muted-foreground">{pendingProposal.affectedIngredients.length ? pendingProposal.affectedIngredients.join(", ") : "—"}</p>
                   </div>
-                  {pendingProposal.kind !== "ADD_INVENTORY" && (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs border border-border rounded-md">
-                        <thead className="bg-muted/50"><tr><th className="text-left p-2">Métrica</th><th className="text-left p-2">Antes</th><th className="text-left p-2">Depois</th></tr></thead>
-                        <tbody>
-                          {([
-                            ["Receita", (pendingProposal as any).before?.name || "—", (pendingProposal as any).after.name],
-                            ["OG", (pendingProposal as any).before ? fmt((pendingProposal as any).before.results.og,3) : "—", fmt((pendingProposal as any).after.results.og,3)],
-                            ["FG", (pendingProposal as any).before ? fmt((pendingProposal as any).before.results.fg,3) : "—", fmt((pendingProposal as any).after.results.fg,3)],
-                            ["ABV", (pendingProposal as any).before ? `${fmt((pendingProposal as any).before.results.abv)}%` : "—", `${fmt((pendingProposal as any).after.results.abv)}%`],
-                            ["IBU", (pendingProposal as any).before ? fmt((pendingProposal as any).before.results.ibu,1) : "—", fmt((pendingProposal as any).after.results.ibu,1)],
-                            ["EBC/SRM", (pendingProposal as any).before ? `${fmt((pendingProposal as any).before.results.ebc,1)} / ${fmt((pendingProposal as any).before.results.srm,1)}` : "—", `${fmt((pendingProposal as any).after.results.ebc,1)} / ${fmt((pendingProposal as any).after.results.srm,1)}`],
-                            ["Volume (L)", (pendingProposal as any).before ? String((pendingProposal as any).before.batchSizeL) : "—", String((pendingProposal as any).after.batchSizeL)],
-                            ["Eficiência", (pendingProposal as any).before ? `${(pendingProposal as any).before.efficiency}%` : "—", `${(pendingProposal as any).after.efficiency}%`],
-                          ] as [string,string,string][]).map(([k,a,b]) => (<tr key={k} className="border-t border-border"><td className="p-2 font-medium">{k}</td><td className="p-2">{a}</td><td className="p-2">{b}</td></tr>))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                  {pendingProposal.kind !== "ADD_INVENTORY" && (
-                    <div className="text-xs text-muted-foreground space-y-1">
-                      <p><b>Fermentáveis:</b> {(pendingProposal as any).after.fermentables.map((f:any)=>`${f.kg} kg ${f.name}`).join("; ") || "—"}</p>
-                      <p><b>Lúpulos:</b> {(pendingProposal as any).after.hops.map((h:any)=>`${h.grams} g ${h.name} (${h.use}${h.minutes?` ${h.minutes}min`:''})`).join("; ") || "—"}</p>
-                      <p><b>Leveduras:</b> {(pendingProposal as any).after.yeasts.map((y:any)=>`${y.packs}x ${y.name}`).join("; ") || "—"}</p>
-                      {(pendingProposal as any).after.miscs?.length ? <p><b>Outros:</b> {(pendingProposal as any).after.miscs.map((m:any)=>`${m.amount} ${m.unit} ${m.name}`).join("; ")}</p> : null}
-                    </div>
-                  )}
+                  {pendingProposal.kind !== "ADD_INVENTORY" && (() => {
+                    const p = pendingProposal;
+                    const rows: [string, string, string][] = [
+                      ["Receita", p.before?.name || "—", p.after.name],
+                      ["OG", p.before ? fmt(p.before.results.og, 3) : "—", fmt(p.after.results.og, 3)],
+                      ["FG", p.before ? fmt(p.before.results.fg, 3) : "—", fmt(p.after.results.fg, 3)],
+                      ["ABV", p.before ? `${fmt(p.before.results.abv)}%` : "—", `${fmt(p.after.results.abv)}%`],
+                      ["IBU", p.before ? fmt(p.before.results.ibu, 1) : "—", fmt(p.after.results.ibu, 1)],
+                      ["EBC/SRM", p.before ? `${fmt(p.before.results.ebc, 1)} / ${fmt(p.before.results.srm, 1)}` : "—", `${fmt(p.after.results.ebc, 1)} / ${fmt(p.after.results.srm, 1)}`],
+                      ["Volume (L)", p.before ? String(p.before.batchSizeL) : "—", String(p.after.batchSizeL)],
+                      ["Eficiência", p.before ? `${p.before.efficiency}%` : "—", `${p.after.efficiency}%`],
+                    ];
+                    return (
+                      <>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs border border-border rounded-md">
+                            <thead className="bg-muted/50"><tr><th className="text-left p-2">Métrica</th><th className="text-left p-2">Antes</th><th className="text-left p-2">Depois</th></tr></thead>
+                            <tbody>
+                              {rows.map(([k, a, b]) => (<tr key={k} className="border-t border-border"><td className="p-2 font-medium">{k}</td><td className="p-2">{a}</td><td className="p-2">{b}</td></tr>))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="text-xs text-muted-foreground space-y-1">
+                          <p><b>Fermentáveis:</b> {p.after.fermentables.map((f) => `${f.kg} kg ${f.name}`).join("; ") || "—"}</p>
+                          <p><b>Lúpulos:</b> {p.after.hops.map((h) => `${h.grams} g ${h.name} (${h.use}${h.minutes ? ` ${h.minutes}min` : ""})`).join("; ") || "—"}</p>
+                          <p><b>Leveduras:</b> {p.after.yeasts.map((y) => `${y.packs}x ${y.name}`).join("; ") || "—"}</p>
+                          {p.after.miscs?.length ? <p><b>Outros:</b> {p.after.miscs.map((m) => `${m.amount} ${m.unit} ${m.name}`).join("; ")}</p> : null}
+                        </div>
+                        {p.inventoryCheck?.some((x) => x.missing > 0) && (
+                          <div className="text-xs text-amber-700 dark:text-amber-300"><b>Faltas no estoque (respeitando quantidades disponíveis):</b> {p.inventoryCheck.filter((x) => x.missing > 0).map((x) => `${x.name}: faltam ${fmt(x.missing, 2)} ${x.unit}`).join("; ")}</div>
+                        )}
+                      </>
+                    );
+                  })()}
                   {pendingProposal.kind === "ADD_INVENTORY" && (
                     <div className="text-xs space-y-1">
-                      <p><b>Antes:</b> {(pendingProposal as any).before ? `${(pendingProposal as any).before.amount} ${(pendingProposal as any).before.unit} ${(pendingProposal as any).before.name}` : "Item novo"}</p>
-                      <p><b>Depois:</b> {(pendingProposal as any).after.amount} {(pendingProposal as any).after.unit} {(pendingProposal as any).after.name}</p>
+                      <p><b>Antes:</b> {pendingProposal.before ? `${pendingProposal.before.amount} ${pendingProposal.before.unit} ${pendingProposal.before.name}` : "Item novo"}</p>
+                      <p><b>Depois:</b> {pendingProposal.after.amount} {pendingProposal.after.unit} {pendingProposal.after.name}</p>
                     </div>
-                  )}
-                  {((pendingProposal as any).inventoryCheck?.some((x:any)=>x.missing>0)) && (
-                    <div className="text-xs text-amber-700 dark:text-amber-300"><b>Faltas no estoque (respeitando quantidades disponíveis):</b> {(pendingProposal as any).inventoryCheck.filter((x:any)=>x.missing>0).map((x:any)=>`${x.name}: faltam ${fmt(x.missing,2)} ${x.unit}`).join("; ")}</div>
                   )}
                   {pendingProposal.warnings?.length ? <div className="text-xs text-amber-700">Avisos: {pendingProposal.warnings.join("; ")}</div> : null}
                   <div className="flex gap-2 flex-wrap">

@@ -278,6 +278,13 @@ function normalizeRecipePayload(payload: Record<string, unknown>, existing: Reci
   if (!existing && (!Array.isArray(payload.hops) || hops.length === 0)) warnings.push("Nenhum lúpulo informado.");
   if (!existing && (!Array.isArray(payload.yeasts) || yeasts.length === 0)) warnings.push("Nenhuma levedura informada (atenuação padrão pode ser aplicada nos cálculos).");
 
+  const mashSteps = Array.isArray(payload.mashSteps)
+    ? payload.mashSteps.map((step, i) => {
+        const s = (step && typeof step === "object" ? step : {}) as Record<string, unknown>;
+        return { name: String(s.name ?? `Etapa ${i + 1}`), tempC: numOr(s.tempC, 66), minutes: numOr(s.minutes, 60) };
+      })
+    : (existing?.mashSteps ?? [{ name: "Sacarificação", tempC: 66, minutes: 60 }]);
+
   const recipe: Recipe = {
     id: String(payload.id ?? existing?.id ?? uid()),
     name: name || "Nova Receita IA",
@@ -285,7 +292,7 @@ function normalizeRecipePayload(payload: Record<string, unknown>, existing: Reci
     author: String(payload.author ?? existing?.author ?? "IA Assistant"),
     notes: String(payload.notes ?? existing?.notes ?? ""),
     equipment,
-    mashSteps: Array.isArray(payload.mashSteps) ? (payload.mashSteps as any[]).map((s, i) => ({ name: String((s as any)?.name ?? `Etapa ${i + 1}`), tempC: numOr((s as any)?.tempC, 66), minutes: numOr((s as any)?.minutes, 60) })) : (existing?.mashSteps ?? [{ name: "Sacarificação", tempC: 66, minutes: 60 }]),
+    mashSteps,
     fermentationTempC: numOr(payload.fermentationTempC, existing?.fermentationTempC ?? 19),
     fermentationDays: numOr(payload.fermentationDays, existing?.fermentationDays ?? 14),
     waterProfileId: (payload.waterProfileId ?? existing?.waterProfileId) as string | undefined,
@@ -393,13 +400,13 @@ export function applyProposal(proposal: Proposal, state: { recipes: Recipe[]; in
   }
 }
 
-export function extractJsonObject(text: string): any | null {
+export function extractJsonObject(text: string): Record<string, unknown> | null {
   const trimmed = (text ?? "").trim();
   if (!trimmed) return null;
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   const candidates = [fenced ? fenced[1].trim() : null, trimmed.startsWith("{") ? trimmed : null, trimmed.match(/\{[\s\S]*\}/)?.[0] ?? null].filter(Boolean) as string[];
   for (const c of candidates) {
-    try { return JSON.parse(c); } catch { /* try next */ }
+    try { const parsed = JSON.parse(c) as unknown; return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null; } catch { /* try next */ }
   }
   return null;
 }

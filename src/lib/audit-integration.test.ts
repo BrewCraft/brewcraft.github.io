@@ -9,14 +9,22 @@ import { makeBackup, restoreBackup, storageKeys } from "./backup";
 import { defaultSettings, normalizeSettings } from "./settings-model";
 
 const store = new Map<string, string>();
-(globalThis as any).localStorage = {
+const localStorageMock: Storage = {
   getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
   setItem: (k: string, v: string) => { store.set(k, String(v)); },
   removeItem: (k: string) => { store.delete(k); },
   clear: () => store.clear(),
+  key: (index: number) => Array.from(store.keys())[index] ?? null,
+  get length() { return store.size; },
 };
-(globalThis as any).window = { dispatchEvent: () => true, addEventListener: () => {}, removeEventListener: () => {}, localStorage: (globalThis as any).localStorage };
-(globalThis as any).CustomEvent = class { type: string; detail: unknown; constructor(type: string, init?: { detail?: unknown }) { this.type = type; this.detail = init?.detail; } };
+(globalThis as unknown as { localStorage: Storage }).localStorage = localStorageMock;
+(globalThis as unknown as { window: unknown }).window = { dispatchEvent: () => true, addEventListener: () => {}, removeEventListener: () => {}, localStorage: localStorageMock };
+(globalThis as unknown as { CustomEvent: unknown }).CustomEvent = class {
+  type: string;
+  detail: unknown;
+  constructor(type: string, init?: { detail?: unknown }) { this.type = type; this.detail = init?.detail; }
+};
+
 
 const closeTo = (a: number, b: number, tol = 0.001) => assert.ok(Math.abs(a - b) <= tol, `${a} not close to ${b} (tol ${tol})`);
 const eq = { batchL: 20, boilMinutes: 60, evaporationLh: 4, trubLossL: 1, fermenterLossL: 1, efficiency: 72 };
