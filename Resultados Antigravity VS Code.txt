@@ -623,3 +623,29 @@ npm run build:standalone
 ## Planned next steps
 1. Finish capability audit vs the 7 requested tools and identify gaps/overlaps.
 2. Implement/extend pure functions and `CalculatorDefinition` entries + UI integration (recipes/inventory/equipment/settings/assistant/storage as applicable), add tests, then run `npm run build` and relevant test suite.
+
+## Implemented (pure/shared + registry, integrated with existing data)
+
+- **`src/lib/brewing-tools.ts`** (new, pure/testable): `fullVolumes` (total/mash/sparge water, grain absorption, evaporation, boil/whirlpool/transfer/fermenter losses, pre/post-boil, kettle-out, fermenter, packaged/total losses); `efficiencyBreakdown` (mash/lavagem/brassagem by gravity points vs potential, real yield points/kg, extract losses per stage); `dryHoppingCalc` (total g and g/L, per-addition distribution/count/contact time/temperature/variety totals — no aroma-extraction lab estimates); `advancedCarbonation` (bottles+kegs, residual CO₂, sugar per liter/total/per bottle, factors: sacarose/dextrose/DME/mel/candi/xarope de bordo, keg pressure at service temp); `costBreakdown`/`recipeCostIntegrated` (ingredients/embalagens/produção, total, R$/L, R$/garrafa; integrates with `recipeCost`/recipe+equipment prices); `mashPhTool` (salt-adjusted water profile → `estimateMashPh`, RA/ratio; integrates with `water-calc`); `optimizeRecipe` (BJCP style + volume/eficiência/OG/IBU/EBC + available ingredients → suggests maltes/lúpulos/levedura, clamps to style ranges, estimates OG/FG/ABV/IBU/EBC/SRM).
+
+## Calculators (UI pattern/registry, `src/lib/calculator-registry.ts`)
+Added 7 definitions with identified inputs/units, defaults, validation, organized results, method notes, clear/restore via existing `CalculatorsPage`:
+- `volumes_full` — Volumes completos da brassagem (Mostura)
+- `efficiency_detailed` — Eficiência detalhada
+- `dry_hopping` — Dry hopping (explicit note: extração aromática não estimada como resultado laboratorial)
+- `carbonation_advanced` — Carbonatação avançada
+- `costs` — Custos de produção
+- `mash_ph` — pH da mostura (estimativa, integrado à química da água/sais/ácidos)
+- `recipe_optimizer` — Otimizador de receitas (BJCP + ingredientes disponíveis)
+
+Existing calculators preserved; registry total 30. Copilot/assistant integration preserved (uses `calculators`/`executeCalculator` over registry).
+
+## Tests & validation
+- Added `src/lib/brewing-tools.test.ts` (volumes, efficiency, dry hopping + non-lab note, carbonation/sugars, costs incl. recipe integration, mash pH, optimizer/style+availability, registry/defaults/finite results for all 7).
+- Updated `src/lib/brewing.test.ts` integrity/count to 30 calculators.
+
+**Results**
+- `node --experimental-transform-types --import ./scripts/test-register.mjs --test src/lib/*.test.ts` → 106 tests, 42 suites, **0 failures**
+- `npm run build` → **success** (`vite build`, built in ~20s; pre-existing chunk-size warning only)
+
+

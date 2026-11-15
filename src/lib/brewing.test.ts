@@ -244,9 +244,9 @@ describe("Química da Água", () => {
 });
 
 describe("Registro e Integridade de Todas as Calculadoras", () => {
-  test("Todas as 23 calculadoras têm IDs únicos e valores iniciais válidos", () => {
-    assert.equal(calculators.length, 23);
-    assert.equal(new Set(calculators.map((c) => c.id)).size, 23);
+  test("Todas as 30 calculadoras têm IDs únicos e valores iniciais válidos", () => {
+    assert.equal(calculators.length, 30);
+    assert.equal(new Set(calculators.map((c) => c.id)).size, 30);
     for (const c of calculators) {
       const v = Object.fromEntries(c.fields.map((f) => [f.id, f.initial]));
       assert.equal(validateCalculator(c, v), undefined, `Erro inicial em ${c.id}`);

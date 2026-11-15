@@ -18,7 +18,9 @@ import {
   yeastPitch,
 } from "./brewing";
 import { estimateViability, simulateStarterStage, type StarterAgitation } from "./yeast-calc";
-import { applySalts, salts, suggestSalts, sulfateChlorideRatio, totalAlkalinity, residualAlkalinity, type WaterProfile } from "./recipe-calc";
+import { applySalts, salts, suggestSalts, sulfateChlorideRatio, totalAlkalinity, residualAlkalinity, type WaterProfile, defaultEquipment } from "./recipe-calc";
+import { estimateMashPh as estimateMashPhWater, type GrainAddition, type AcidAddition } from "./water-calc";
+import { fullVolumes, efficiencyBreakdown, dryHoppingCalc, advancedCarbonation, primingSugars, costBreakdown, mashPhTool, optimizeRecipe } from "./brewing-tools";
 import { getLocale, readSettings } from "./settings";
 
 export type Values = Record<string, string>;
@@ -491,6 +493,266 @@ export const calculators: CalculatorDefinition[] = [
     calculate: (v) => {
       const srm = moreySrm(n(v, "grain1"), n(v, "color1"), n(v, "grain2"), n(v, "color2"), n(v, "volume"));
       return [r("Cor estimada", srm, "SRM", 1), r("Cor estimada", srm * 1.97, "EBC", 1)];
+    },
+  },
+  {
+    id: "volumes_full",
+    title: "Volumes completos da brassagem",
+    group: "Mostura",
+    fields: [
+      f("batchL", "Volume desejado no fermentador (L)", 20, 0.001),
+      f("grainKg", "Total de grãos (kg)", 5, 0),
+      f("mashWaterL", "Água de mostura (L)", 15, 0),
+      f("spargeWaterL", "Água de lavagem/sparge (L)", 12, 0),
+      f("absorptionLPerKg", "Absorção dos grãos (L/kg)", 1.0, 0, 3),
+      f("boilMinutes", "Tempo de fervura (min)", 60, 0),
+      f("evaporationLh", "Evaporação (L/h)", 4, 0),
+      f("boilLossL", "Perdas na panela/fervura (L)", 0.5, 0),
+      f("whirlpoolLossL", "Perdas no whirlpool (L)", 0.5, 0),
+      f("transferLossL", "Perdas na transferência (L)", 0.5, 0),
+      f("fermenterLossL", "Perdas no fermentador/trub frio (L)", 1, 0),
+    ],
+    note: "Balanço de volumes: água total = mostura + lavagem; pré-fervura = água total − absorção; pós-fervura = pré-fervura − evaporação − perdas na panela; saída da caldeira = pós-fervura − whirlpool; fermentador = saída − transferência; envase = fermentador − perdas no fermentador. Configure conforme seu equipamento.",
+    calculate: (v) => {
+      const out = fullVolumes({ batchL: n(v, "batchL"), grainKg: n(v, "grainKg"), mashWaterL: n(v, "mashWaterL"), spargeWaterL: n(v, "spargeWaterL"), absorptionLPerKg: n(v, "absorptionLPerKg"), boilMinutes: n(v, "boilMinutes"), evaporationLh: n(v, "evaporationLh"), boilLossL: n(v, "boilLossL"), whirlpoolLossL: n(v, "whirlpoolLossL"), transferLossL: n(v, "transferLossL"), fermenterLossL: n(v, "fermenterLossL") });
+      return [
+        r("Volume de água total", out.totalWater, "L"),
+        r("Água de mostura", out.mashWater, "L"),
+        r("Água de lavagem", out.spargeWater, "L"),
+        r("Absorção dos grãos", out.grainAbsorption, "L"),
+        r("Evaporação", out.evaporation, "L"),
+        r("Perdas na panela", n(v, "boilLossL"), "L"),
+        r("Perdas no whirlpool", n(v, "whirlpoolLossL"), "L"),
+        r("Perdas na transferência", n(v, "transferLossL"), "L"),
+        r("Volume pré-fervura", out.preBoil, "L"),
+        r("Volume pós-fervura", out.postBoil, "L"),
+        r("Volume na caldeira (após whirlpool)", out.kettleOut, "L"),
+        r("Volume final no fermentador", out.fermenter, "L"),
+        r("Volume final embalável (estimado)", out.packaged, "L"),
+        r("Perdas totais", out.totalLosses, "L"),
+      ];
+    },
+  },
+  {
+    id: "efficiency_detailed",
+    title: "Eficiência detalhada",
+    group: "Geral",
+    fields: [
+      f("grainKg", "Malte total (kg)", 5, 0.001),
+      f("potential", "Potencial médio dos grãos (SG)", 1.037, 1.01, 1.06),
+      f("mashVolumeL", "Volume medido na mostura (L)", 16, 0),
+      f("mashOg", "OG medida na mostura (SG)", 1.045, 1, 1.2),
+      f("lauterVolumeL", "Volume pré-fervura coletado (L)", 25, 0),
+      f("preBoilOg", "OG pré-fervura (SG)", 1.042, 1, 1.2),
+      f("kettleVolumeL", "Volume pós-fervura/na caldeira (L)", 21, 0),
+      f("kettleOg", "OG na caldeira/fermentador (SG)", 1.05, 1, 1.2),
+    ],
+    note: "Eficiências por pontos de gravidade: eficiência = pontos obtidos / pontos potenciais. Mostura mede conversão; lavagem mede extração após sparge; brassagem (brewhouse) mede extrato entregue à caldeira/fermentador. Perdas de extrato = quedas entre etapas.",
+    calculate: (v) => {
+      const out = efficiencyBreakdown({ grainKg: n(v, "grainKg"), potentialSg: n(v, "potential"), mashVolumeL: n(v, "mashVolumeL"), mashOg: n(v, "mashOg"), lauterVolumeL: n(v, "lauterVolumeL"), preBoilOg: n(v, "preBoilOg"), kettleVolumeL: n(v, "kettleVolumeL"), kettleOg: n(v, "kettleOg") });
+      return [
+        r("Pontos potenciais de extrato", out.potentialPoints, "GU·L", 1),
+        r("Eficiência de mostura", out.mashEff, "%", 1),
+        r("Eficiência de lavagem", out.lauterEff, "%", 1),
+        r("Eficiência da brassagem", out.brewhouseEff, "%", 1),
+        r("Rendimento real (pontos/kg)", out.extractYield, "GU·L/kg", 1),
+        r("Pontos obtidos na caldeira", out.kettlePoints, "GU·L", 1),
+        r("Perdas de extrato na lavagem", out.lauterLossPct, "%", 1),
+        r("Perdas de extrato pós-lavagem/transferência", out.transferLossPct, "%", 1),
+      ];
+    },
+  },
+  {
+    id: "dry_hopping",
+    title: "Dry hopping",
+    group: "Geral",
+    fields: [
+      f("volumeL", "Volume da cerveja (L)", 20, 0.001),
+      f("grams1", "Lúpulo adição 1 (g)", 50, 0),
+      f("name1", "Variedade adição 1 (use 0 no campo numérico, nome abaixo ignorado se vazio)", 0),
+      f("days1", "Tempo de contato adição 1 (dias)", 4, 0),
+      f("temp1", "Temperatura adição 1 (°C)", 18, -2, 30),
+      f("grams2", "Lúpulo adição 2 (g)", 25, 0),
+      f("days2", "Tempo de contato adição 2 (dias)", 3, 0),
+      f("temp2", "Temperatura adição 2 (°C)", 18, -2, 30),
+      f("grams3", "Lúpulo adição 3 (g)", 0, 0),
+      f("days3", "Tempo de contato adição 3 (dias)", 0, 0),
+      f("temp3", "Temperatura adição 3 (°C)", 18, -2, 30),
+    ],
+    note: "Calcula carga total e por adição em g/L e g totais, além de número de adições e tempo médio de contato. A extração aromática depende de variedade, formato, temperatura, contato e processo, portanto não é estimada como resultado laboratorial.",
+    calculate: (v) => {
+      const adds = [
+        { name: "Adição 1", grams: n(v, "grams1"), days: n(v, "days1"), tempC: n(v, "temp1") },
+        { name: "Adição 2", grams: n(v, "grams2"), days: n(v, "days2"), tempC: n(v, "temp2") },
+        { name: "Adição 3", grams: n(v, "grams3"), days: n(v, "days3"), tempC: n(v, "temp3") },
+      ].filter(a => a.grams > 0 || a.days > 0);
+      const out = dryHoppingCalc({ volumeL: n(v, "volumeL"), additions: adds.length ? adds : [{ name: "Adição 1", grams: 0, days: 0, tempC: 18 }] });
+      const res: Result[] = [
+        r("Quantidade total de lúpulo", out.totalGrams, "g", 1),
+        r("Carga total", out.totalGPerL, "g/L", 2),
+        r("Número de adições", out.additions.filter(a => a.grams > 0).length, "adições", 0),
+        r("Tempo médio de contato", out.avgContactDays, "dias", 1),
+      ];
+      out.additions.filter(a => a.grams > 0).forEach((a, i) => {
+        res.push(r(`${a.name} — quantidade`, a.grams, "g", 1));
+        res.push(r(`${a.name} — taxa`, a.gPerL, "g/L", 2));
+        res.push(r(`${a.name} — contato`, a.days, "dias", 1));
+        res.push(r(`${a.name} — temperatura`, a.tempC, "°C", 1));
+      });
+      return res;
+    },
+  },
+  {
+    id: "carbonation_advanced",
+    title: "Carbonatação avançada",
+    group: "Geral",
+    fields: [
+      f("volumeL", "Volume da cerveja (L)", 20, 0.001),
+      f("beerTempC", "Temperatura da cerveja / maior temp. pós-fermentação (°C)", 20, 0, 40),
+      f("targetVolumes", "Carbonatação desejada (volumes CO₂)", 2.5, 0.5, 5),
+      f("kegTempC", "Temperatura de serviço do barril (°C)", 4, 0, 30),
+      f("bottles", "Número de garrafas", 40, 0),
+      f("bottleVolumeMl", "Volume por garrafa (mL)", 500, 1),
+    ],
+    note: "CO₂ residual estimado pela temperatura pós-fermentação (equação de solubilidade). Açúcar total = (CO₂ alvo − residual) × volume × fator. Fatores típicos: sacarose 4,0 g/L/vol, dextrose mono 4,4, DME ~6,5, mel ~5,3, candi ~4,1, xarope de bordo ~5,7 (aproximações). Pressão de equilíbrio no barril depende da temperatura de serviço.",
+    calculate: (v) => {
+      const out = advancedCarbonation({ volumeL: n(v, "volumeL"), beerTempC: n(v, "beerTempC"), targetVolumes: n(v, "targetVolumes"), kegTempC: n(v, "kegTempC"), bottles: n(v, "bottles"), bottleVolumeMl: n(v, "bottleVolumeMl") });
+      const res: Result[] = [
+        r("CO₂ residual", out.residual, "vol"),
+        r("CO₂ alvo", out.target, "vol"),
+        r("Carbonatação equivalente", out.co2Gl, "g/L", 2),
+        r("Açúcar por litro (sacarose)", out.sugarPerLiter, "g/L", 2),
+        r("Açúcar total (sacarose)", out.sucroseTotal, "g", 1),
+        r("Sacarose por garrafa", out.perBottleSucrose, "g", 2),
+        r("Sacarose total nas garrafas", out.totalBottleSugar, "g", 1),
+        r("Pressão no barril (serviço)", out.kegBar, "bar", 2),
+        r("Pressão no barril (serviço)", out.kegPsi, "psi", 1),
+      ];
+      for (const s of out.sugars.filter(s => s.id !== "sucrose")) {
+        res.push(r(`${s.label} — total`, s.totalG, "g", 1));
+        res.push(r(`${s.label} — por litro`, s.perLiterG, "g/L", 2));
+      }
+      return res;
+    },
+  },
+  {
+    id: "costs",
+    title: "Custos de produção",
+    group: "Geral",
+    fields: [
+      f("maltKg", "Malte total (kg)", 5, 0),
+      f("maltPrice", "Preço do malte (R$/kg)", 20, 0),
+      f("hopG", "Lúpulo total (g)", 80, 0),
+      f("hopPrice", "Preço do lúpulo (R$/kg)", 250, 0),
+      f("yeastPacks", "Levedura (pacotes)", 1, 0),
+      f("yeastPrice", "Preço da levedura (R$/pacote)", 35, 0),
+      f("miscCost", "Outros ingredientes (R$)", 5, 0),
+      f("packagingCost", "Custo de embalagens (R$)", 40, 0),
+      f("productionCost", "Custo de produção/energia/mão de obra (R$)", 20, 0),
+      f("batchL", "Volume da receita (L)", 20, 0.001),
+      f("bottleMl", "Volume por garrafa (mL)", 500, 1),
+    ],
+    note: "Custo total = ingredientes + embalagens + produção. Custo por litro = total / volume. Custo por garrafa = custo por litro × volume da garrafa. Para custos reais por ingrediente cadastrado, use o inventário e a página de receitas.",
+    calculate: (v) => {
+      const out = costBreakdown({
+        ingredients: [
+          { label: "Malte", qty: n(v, "maltKg"), unit: "kg", unitPrice: n(v, "maltPrice") },
+          { label: "Lúpulo", qty: n(v, "hopG") / 1000, unit: "kg", unitPrice: n(v, "hopPrice") },
+          { label: "Levedura", qty: n(v, "yeastPacks"), unit: "pct", unitPrice: n(v, "yeastPrice") },
+          { label: "Outros", qty: 1, unit: "un", unitPrice: n(v, "miscCost") },
+        ],
+        packaging: [{ label: "Embalagens", qty: 1, unit: "lote", unitPrice: n(v, "packagingCost") }],
+        productionFixed: n(v, "productionCost"),
+        batchL: n(v, "batchL"),
+        bottleMl: n(v, "bottleMl"),
+      });
+      return [
+        r("Custo dos maltes", out.ingredients[0].total, "R$", 2),
+        r("Custo dos lúpulos", out.ingredients[1].total, "R$", 2),
+        r("Custo da levedura", out.ingredients[2].total, "R$", 2),
+        r("Custo de outros ingredientes", out.ingredients[3].total, "R$", 2),
+        r("Custo total de ingredientes", out.ingredientTotal, "R$", 2),
+        r("Custo de embalagens", out.packagingTotal, "R$", 2),
+        r("Custo de produção", out.production, "R$", 2),
+        r("Custo total da receita", out.total, "R$", 2),
+        r("Custo por litro", out.costPerLiter, "R$/L", 2),
+        r("Custo por garrafa", out.costPerBottle, "R$/garrafa", 2),
+      ];
+    },
+  },
+  {
+    id: "mash_ph",
+    title: "pH da mostura (estimativa)",
+    group: "Mostura",
+    fields: [
+      f("mashWaterL", "Água de mostura (L)", 15, 0.001),
+      f("baseKg", "Malte base (kg)", 4.5, 0),
+      f("baseColorL", "Cor do malte base (°L)", 2, 0),
+      f("crystalKg", "Malte crystal/caramelo (kg)", 0.3, 0),
+      f("crystalColorL", "Cor crystal (°L)", 40, 0),
+      f("roastKg", "Malte torrado (kg)", 0, 0),
+      f("roastColorL", "Cor torrado (°L)", 400, 0),
+      f("ca", "Cálcio da água (ppm)", 50, 0),
+      f("mg", "Magnésio da água (ppm)", 10, 0),
+      f("na", "Sódio da água (ppm)", 10, 0),
+      f("so4", "Sulfato da água (ppm)", 80, 0),
+      f("cl", "Cloreto da água (ppm)", 60, 0),
+      f("hco3", "Bicarbonato da água (ppm)", 50, 0),
+      f("gypsum", "Gipsita adicionada (g)", 0, 0),
+      f("cacl2", "Cloreto de cálcio adicionado (g)", 0, 0),
+      f("lactic85", "Ácido lático 85% (mL)", 0, 0),
+      f("phosphoric10", "Ácido fosfórico 10% (mL)", 0, 0),
+    ],
+    note: "Estimativa do pH da mostura (modelo de tamponamento de maltes, alcalinidade residual de Kolbach e efeito de sais/ácidos, referências Palmer/Kaminski, Troester, deLange). O pH real depende de medições, temperatura e composição exata dos grãos; meça em amostra resfriada a ~25 °C.",
+    calculate: (v) => {
+      const grains: GrainAddition[] = [];
+      if (n(v, "baseKg") > 0) grains.push({ name: "Base", kg: n(v, "baseKg"), colorLovibond: n(v, "baseColorL"), type: "base" });
+      if (n(v, "crystalKg") > 0) grains.push({ name: "Crystal", kg: n(v, "crystalKg"), colorLovibond: n(v, "crystalColorL"), type: "crystal" });
+      if (n(v, "roastKg") > 0) grains.push({ name: "Torrado", kg: n(v, "roastKg"), colorLovibond: n(v, "roastColorL"), type: "roasted" });
+      if (grains.length === 0) grains.push({ name: "Base", kg: 4.5, colorLovibond: 2, type: "base" });
+      const source: WaterProfile = { ca: n(v, "ca"), mg: n(v, "mg"), na: n(v, "na"), so4: n(v, "so4"), cl: n(v, "cl"), hco3: n(v, "hco3") };
+      const out = mashPhTool({ grains, mashWaterL: n(v, "mashWaterL"), source, salts: { gypsum: n(v, "gypsum"), cacl2: n(v, "cacl2") }, acids: { lactic85Ml: n(v, "lactic85"), phosphoric10Ml: n(v, "phosphoric10") } });
+      return [
+        r("pH estimado da mostura", out.estimatedPh, "pH", 2),
+        r("pH base dos maltes (destilada)", out.baseMaltPh, "pH", 2),
+        r("Efeito da alcalinidade da água", out.waterAlkalinityEffect, "ΔpH", 2),
+        r("Efeito Ca/Mg (Kolbach)", out.calciumMagnesiumEffect, "ΔpH", 2),
+        r("Efeito de ácidos", out.acidEffect, "ΔpH", 2),
+        r("Alcalinidade residual", out.residualAlkalinity, "ppm CaCO₃", 1),
+        r("Relação SO₄/Cl (água ajustada)", out.ratio, "", 2),
+      ];
+    },
+  },
+  {
+    id: "recipe_optimizer",
+    title: "Otimizador de receitas",
+    group: "Geral",
+    fields: [
+      select("style", "Estilo cervejeiro (BJCP)", "18B", [
+        ["18B", "American Pale Ale (18B)"], ["21A", "American IPA (21A)"], ["21B", "Hazy IPA (21B)"], ["4A", "Munich Helles (4A)"],
+        ["5D", "German Pils (5D)"], ["10A", "Weissbier (10A)"], ["13C", "English Porter (13C)"], ["15B", "Irish Stout (15B)"], ["19A", "American Amber Ale (19A)"], ["20A", "American Porter (20A)"],
+      ]),
+      f("batchL", "Volume desejado (L)", 20, 0.001),
+      f("efficiency", "Eficiência do equipamento (%)", 72, 40, 95),
+      f("targetOg", "OG desejada (SG)", 1.05, 1.02, 1.12),
+      f("targetIbu", "IBU desejado", 35, 0, 120),
+      f("targetEbc", "EBC desejado", 16, 0, 200),
+    ],
+    note: "Sugestão estimada de maltes, lúpulos e levedura com base no estilo BJCP, metas e limites do catálogo interno. Respeita faixas do estilo ao limitar metas; não substitui ajustes finos de receita nem medições reais.",
+    calculate: (v) => {
+      const out = optimizeRecipe({ styleCode: String(v.style || "18B"), batchL: n(v, "batchL"), efficiency: n(v, "efficiency"), targetOg: n(v, "targetOg"), targetIbu: n(v, "targetIbu"), targetEbc: n(v, "targetEbc") });
+      const res: Result[] = [
+        r("OG estimada", out.estimates.og, "SG", 4),
+        r("FG estimada", out.estimates.fg, "SG", 4),
+        r("ABV estimado", out.estimates.abv, "% ABV", 2),
+        r("IBU estimado", out.estimates.ibu, "IBU", 1),
+        r("Cor estimada", out.estimates.ebc, "EBC", 1),
+        r("Grãos totais sugeridos", out.estimates.grainKg, "kg", 2),
+      ];
+      out.fermentables.forEach((f, i) => res.push(r(`Malte ${i + 1}: ${f.name}`, f.kg, "kg", 2)));
+      out.hops.forEach((h, i) => res.push(r(`Lúpulo ${i + 1}: ${h.name} (${h.minutes} min)`, h.grams, "g", 1)));
+      if (out.yeast) res.push(r("Levedura sugerida: atenuação", out.yeast.attenuation, "%", 0));
+      return res;
     },
   },
 ];
