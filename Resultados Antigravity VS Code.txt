@@ -599,3 +599,27 @@ npm run build:standalone
 - **Proteção de chave no backend/proxy:** integração permanece client-side (Vite) como no estado atual; nenhuma chave exposta no repositório, mas o modelo de entrega da chave é o mesmo do frontend.
 - **Testes de integração E2E com a API Gemini real (chamadas de rede/chave):** cobertos a lógica/controladores, parsing, propostas, calculadoras e limites; respostas reais do modelo e pesquisa externa dependem do serviço/chave em runtime.
 
+
+## Completed
+
+**1. Ingredient catalog expansion** (`src/lib/catalog.ts`)
+- Extended catalog types (`CatalogFermentable/Hop/Yeast/Misc`) with optional technical fields and `source` markers (`official|estimate|user|unknown`).
+- Added requested malts/fermentables, hops, yeasts, adjuncts/miscs (58 fermentables, 37 hops, 22 yeasts, 16 miscs) without duplicates; preserved legacy entries.
+- Unavailable params set to `desconhecido`; typical values marked `source: "estimate"`.
+- UI adjusted for optional fields: `src/components/InventoryPage.tsx`, `src/components/RecipeFormPage.tsx`.
+- Added `src/lib/catalog.test.ts`. Verified: `npm run build` passed; catalog/brewing/recipe-calc tests passed (48 tests, 0 failures).
+
+**2. Gemini/AI copilot evolution** (`src/lib/ai-copilot.ts`, `src/lib/gemini.ts`, `src/components/AiAssistant.tsx`)
+- Added copilot layer using real BrewCraft data/functions: context building (`buildCopilotContext`), recipe summaries/ABV queries, calculator execution (`executeCalculator` over registry), and proposal flow (`proposeRecipeCreate/Update`, `proposeInventoryAdd`, `applyProposal`, `extractJsonObject`) with validation, affected ingredients, before/after, and stock warnings.
+- Updated Gemini system prompt for copilot rules (real context only, no mental math, mutations via proposal + explicit confirmation, distinguish external research, ask for missing essentials).
+- `AiAssistant` now injects copilot context per send, handles proposal/CALCULATE actions, and renders approve/reject confirmation UI (no silent mutations).
+- Added `src/lib/ai-copilot.test.ts`. Verified: `npm run build` passed; copilot + gemini-limits tests passed (16 tests, 0 failures).
+
+## In progress / not started
+**3. “BREWCRAFT — Novas calculadoras e ferramentas cervejeiras” (7 new/expanded tools)**
+- Analysis begun: reviewed `calculator-registry.ts` (23 calculators), `brewing.ts`, `recipe-calc.ts`, `water-calc.ts`, `CalculatorsPage.tsx`, `ai-copilot.ts` to understand existing coverage (volumes/evaporation, efficiency/OG-FG, carbonation, water/RA & mash pH estimate in `water-calc`, IBU/SRM, yeast, etc.).
+- **No implementations, integrations, or tests added yet** for the 7 requested tools (complete volumes, efficiency, dry hopping, advanced carbonation, costs, pH, recipe optimizer).
+
+## Planned next steps
+1. Finish capability audit vs the 7 requested tools and identify gaps/overlaps.
+2. Implement/extend pure functions and `CalculatorDefinition` entries + UI integration (recipes/inventory/equipment/settings/assistant/storage as applicable), add tests, then run `npm run build` and relevant test suite.
