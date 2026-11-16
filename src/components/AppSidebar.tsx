@@ -282,7 +282,10 @@ export function AppSidebar() {
               </SidebarMenuItem>
 
               <SidebarMenuItem>
-                <SidebarMenuButton asChild>
+                <SidebarMenuButton
+                  asChild
+                  className="h-auto items-start [&>span:last-child]:overflow-visible [&>span:last-child]:whitespace-normal [&>span:last-child]:text-clip"
+                >
                   <button
                     type="button"
                     disabled={!offlineRelease || offlineLoading}
@@ -290,7 +293,7 @@ export function AppSidebar() {
                       if (!offlineRelease) return;
                       window.open(offlineRelease.downloadUrl, "_blank", "noopener,noreferrer");
                     }}
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
                     title={
                       offlineRelease
                         ? t("Baixar versão offline", "Download offline version")
@@ -299,10 +302,10 @@ export function AppSidebar() {
                           : t("Versão offline indisponível", "Offline version unavailable")
                     }
                   >
-                    <Download className="h-4 w-4" />
-                    <span className="flex flex-col items-start leading-tight">
+                    <Download className="mt-0.5 h-4 w-4" />
+                    <span className="flex min-w-0 flex-col items-start leading-tight">
                       <span>{t("Versão Offline", "Offline Version")}</span>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-xs text-muted-foreground whitespace-normal break-words">
                         {offlineLoading
                           ? t("Verificando...", "Checking...")
                           : offlineRelease
