@@ -95,8 +95,6 @@ export function AppSidebar() {
           cache: "no-store",
           headers: {
             Accept: "application/vnd.github+json",
-            "Cache-Control": "no-cache",
-            Pragma: "no-cache",
           },
         });
 
