@@ -1,0 +1,58 @@
+name: Offline Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: offline-release
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build standalone offline app
+        run: npm run build:standalone
+
+      - name: Verify standalone output
+        run: |
+          test -s dist/index.html
+
+      - name: Create offline zip
+        run: |
+          rm -f brewcraft-offline.zip
+          cd dist
+          zip -r ../brewcraft-offline.zip .
+
+      - name: Publish offline release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="offline-latest"
+          TITLE="BrewCraft Offline"
+          NOTES="Versão offline standalone gerada automaticamente a partir da branch main."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --latest=false
+          else
+            gh release create "$TAG" brewcraft-offline.zip --title "$TITLE" --notes "$NOTES" --latest=false
+            exit 0
+          fi
+          gh release upload "$TAG" brewcraft-offline.zip --clobber
