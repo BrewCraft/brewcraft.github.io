@@ -198,11 +198,6 @@ export class GeminiService {
     return {
       abortSignal: signal,
       systemInstruction: SYSTEM_PROMPT,
-      tools: [
-        {
-          googleSearch: {},
-        },
-      ],
     };
   }
 
