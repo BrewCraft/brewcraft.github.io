@@ -18,6 +18,7 @@ import StylesPage from "./components/StylesPage";
 import StyleDetailPage from "./components/StyleDetailPage";
 import BrewDayPage from "./components/BrewDayPage";
 import SettingsPage from "./components/SettingsPage";
+import CloudSyncPage from "./components/CloudSyncPage";
 import AiAssistant from "./components/AiAssistant";
 import NotFound from "./pages/NotFound";
 import { SettingsTheme } from "./lib/settings";
@@ -61,6 +62,7 @@ const App = () => (
             <Route path="/fermentation" element={<Navigate to="/profiles/fermentacao" replace />} />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+<Route path="/cloud-sync" element={<CloudSyncPage />} />
             <Route path="/ai-assistant" element={<AiAssistant />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

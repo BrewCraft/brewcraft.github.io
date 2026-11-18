@@ -273,8 +273,8 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
                   <NavLink
-                    to="/settings#cloud-sync"
-                    className={getNavClassName("/settings")}
+                    to="/cloud-sync"
+                    className={getNavClassName("/cloud-sync")}
                   >
                     <Cloud className="h-4 w-4" />
                     <span>{t("Nuvem e sincronização", "Cloud & sync")}</span>
