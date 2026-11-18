@@ -31,6 +31,8 @@ export interface AppSettings {
   mashReference: number;
   mashAdjustment: number;
   additionalMeasurements: string[];
+  geminiApiKey: string;
+  geminiModel: string;
 }
 
 export const defaultSettings: AppSettings = {
@@ -40,6 +42,8 @@ export const defaultSettings: AppSettings = {
   temperature: "°C", volume: "L", weight: "kg", hopWeight: "g", carbonation: "vol", pressure: "bar",
   altitude: "m", diastatic: "lintner", dateFormat: "auto", timeFormat: "auto", mashReference: 66,
   mashAdjustment: 1, additionalMeasurements: [],
+  geminiApiKey: "",
+  geminiModel: "gemini-3.6-flash",
 };
 export const measurementOptions = [
   { id: "preBoilSg", label: "Densidade pré-fervura", unit: "SG" },
@@ -62,6 +66,7 @@ export function normalizeSettings(value: unknown): AppSettings {
     const v = input[key];
     if (typeof out[key] === "boolean" && typeof v === "boolean") Object.assign(out, { [key]: v });
     if (choices[key]?.includes(String(v))) Object.assign(out, { [key]: v });
+    if (typeof out[key] === "string" && typeof v === "string" && !choices[key]) Object.assign(out, { [key]: v });
   }
   if (typeof input.nextBatch === "number" && Number.isSafeInteger(input.nextBatch) && input.nextBatch >= 1) out.nextBatch = input.nextBatch;
   if (typeof input.mashReference === "number" && input.mashReference >= 55 && input.mashReference <= 75) out.mashReference = input.mashReference;

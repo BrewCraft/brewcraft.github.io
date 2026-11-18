@@ -1,16 +1,26 @@
-import React, { useState, useRef, useEffect } from "react";
-import { 
-  Send, 
-  User, 
-  Loader2, 
-  PlusCircle, 
-  Trash2, 
-  Image as ImageIcon, 
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import {
+  Send,
+  User,
+  Loader2,
+  PlusCircle,
+  Trash2,
+  Image as ImageIcon,
   AlertCircle,
   Mic,
   MicOff,
   Settings2,
-  Brain
+  Brain,
+  Key,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  HelpCircle,
+  Save,
+  RotateCcw,
+  CheckCircle,
+  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,10 +28,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { GeminiService, geminiLimiter, type Message, GEMINI_3_LIVE_MODELS, DEFAULT_GEMINI_3_MODEL } from "@/lib/gemini";
+import { GeminiService, geminiLimiter, type Message, GEMINI_3_LIVE_MODELS, GEMINI_3_FALLBACK_MODELS, DEFAULT_GEMINI_3_MODEL } from "@/lib/gemini";
 import { useGeminiLive } from "@/hooks/use-gemini-live";
 import { buildCopilotContext, proposeRecipeCreate, proposeRecipeUpdate, proposeInventoryAdd, applyProposal, executeCalculator, extractJsonObject, type Proposal } from "@/lib/ai-copilot";
-import { readSettings } from "@/lib/settings";
+import { readSettings, saveSettings, useSettings } from "@/lib/settings";
 import {
   Tooltip,
   TooltipContent,
@@ -39,7 +49,6 @@ import {
 import { useInventory, useRecipes, uid } from "@/lib/store";
 import { type Recipe, defaultEquipment, recipeStats, type InventoryItem, type HopUse } from "@/lib/recipe-calc";
 import { fmt } from "@/lib/store";
-import { saveSettings } from "@/lib/settings";
 import geminiLogo from "../../gemini-svg.svg";
 
 type AiAction = {
@@ -114,6 +123,387 @@ const parseAiAction = (content: string): AiAction | null => {
   return null;
 };
 
+const MODEL_OPTIONS = [
+  ...GEMINI_3_LIVE_MODELS,
+  ...GEMINI_3_FALLBACK_MODELS.filter(m => !GEMINI_3_LIVE_MODELS.includes(m)),
+] as const;
+
+const MODEL_LABELS: Record<string, string> = {
+  "gemini-3.6-flash": "Gemini 3.6 Flash",
+  "gemini-3.7-flash": "Gemini 3.7 Flash",
+  "gemini-3.5-flash": "Gemini 3.5 Flash",
+  "gemini-3.5-flash-lite": "Gemini 3.5 Flash Lite",
+  "gemini-3.1-flash-lite": "Gemini 3.1 Flash Lite",
+  "gemini-3.8-flash": "Gemini 3.8 Flash",
+  "gemini-3.8-live": "Gemini 3.8 Live",
+  "gemini-3.8-live-extended-thinking": "Gemini 3.8 Live Extended Thinking",
+};
+
+const ApiKeySetupCard: React.FC<{
+  apiKey: string;
+  onSave: (key: string) => void;
+  onTest: (key: string) => Promise<void>;
+  testing: boolean;
+  showTutorial: boolean;
+  onToggleTutorial: () => void;
+}> = ({ apiKey, onSave, onTest, testing, showTutorial, onToggleTutorial }) => {
+  const [key, setKey] = useState(apiKey);
+  const [saved, setSaved] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const handleSave = () => {
+    if (key.trim()) {
+      onSave(key.trim());
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
+  };
+
+  const handleTest = async () => {
+    if (key.trim()) {
+      await onTest(key.trim());
+    }
+  };
+
+  return (
+    <Card className="mb-4 border-primary/50 bg-primary/5 dark:bg-primary/10 animate-slide-in">
+      <CardContent className="p-4 sm:p-6">
+        <div className="flex items-start gap-4">
+          <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center">
+            <Key className="w-6 h-6 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-lg font-semibold text-foreground">Chave da API Gemini necessária</h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              Insira sua chave da API do Google AI Studio para usar o assistente de IA. A chave é salva localmente no seu navegador e sincronizada com seu Dropbox (se configurado).
+            </p>
+            <div className="mt-4 flex flex-col sm:flex-row gap-3">
+              <div className="flex-1 relative">
+                <Input
+                  ref={inputRef}
+                  type="password"
+                  value={key}
+                  onChange={(e) => setKey(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSave()}
+                  placeholder="Cole sua chave API aqui (ex: AIza...)"
+                  className="pr-10"
+                  disabled={testing}
+                />
+                {key && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-2 top-1/2 -translate-y-1/2"
+                    onClick={() => setKey("")}
+                    aria-label="Limpar chave"
+                  >
+                    <XCircle className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
+              <Button
+                onClick={handleSave}
+                disabled={!key.trim() || testing}
+                className="whitespace-nowrap"
+              >
+                {saved ? (
+                  <>
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    Salvo
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4 mr-2" />
+                    Salvar chave
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleTest}
+                disabled={!key.trim() || testing}
+                className="whitespace-nowrap"
+              >
+                {testing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Testando...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Testar
+                  </>
+                )}
+              </Button>
+            </div>
+            <div className="mt-3 flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onToggleTutorial}
+                className="gap-1"
+              >
+                <HelpCircle className="w-4 h-4" />
+                {showTutorial ? "Ocultar tutorial" : "Como criar uma chave"}
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                A chave nunca sai do seu navegador, exceto para sincronização criptografada no seu Dropbox.
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {showTutorial && (
+          <div className="mt-6 p-4 bg-muted/50 rounded-xl border animate-fade-in">
+            <h4 className="font-medium mb-3 flex items-center gap-2">
+              <Sparkles className="w-4 h-4" />
+              Passo a passo para criar sua chave da API Gemini
+            </h4>
+            <ol className="space-y-3 text-sm text-muted-foreground">
+              <li className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-medium">1</span>
+                <div>
+                  <p className="font-medium">Acesse o Google AI Studio</p>
+                  <p>Entre em <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-primary underline hover:text-primary/80 flex items-center gap-1">aistudio.google.com/apikey <ExternalLink className="w-3 h-3" /></a></p>
+                </div>
+              </li>
+              <li className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-medium">2</span>
+                <div>
+                  <p className="font-medium">Faça login com sua conta Google</p>
+                  <p>Use a mesma conta que deseja associar à chave da API.</p>
+                </div>
+              </li>
+              <li className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-medium">3</span>
+                <div>
+                  <p className="font-medium">Clique em "Create API Key" (Criar chave da API)</p>
+                  <p>Escolha "Create API key in new project" ou selecione um projeto existente.</p>
+                </div>
+              </li>
+              <li className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-medium">4</span>
+                <div>
+                  <p className="font-medium">Copie a chave gerada</p>
+                  <p>A chave começa com <code className="bg-muted px-1 rounded">AIza...</code>. Copie e cole no campo acima.</p>
+                </div>
+              </li>
+              <li className="flex gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-medium">5</span>
+                <div>
+                  <p className="font-medium">(Opcional) Ative o faturamento para cotas maiores</p>
+                  <p>No <a href="https://console.cloud.google.com/billing" target="_blank" rel="noopener noreferrer" className="text-primary underline hover:text-primary/80 flex items-center gap-1">Google Cloud Console <ExternalLink className="w-3 h-3" /></a>, ative o faturamento no projeto para aumentar os limites de requisições por minuto.</p>
+                </div>
+              </li>
+            </ol>
+            <div className="mt-4 p-3 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/50 rounded-lg">
+              <p className="text-xs text-amber-800 dark:text-amber-200 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                <strong>Dica:</strong> O plano gratuito tem limite de 60 requisições/minuto. Se receber erro 429, aguarde alguns segundos ou ative o faturamento.
+              </p>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
+const ModelSelector: React.FC<{
+  model: string;
+  onChange: (model: string) => void;
+  isOpen: boolean;
+  onToggle: () => void;
+}> = ({ model, onChange, isOpen, onToggle }) => {
+  const [hovered, setHovered] = useState<string | null>(null);
+
+  return (
+    <div className="relative">
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onToggle}
+              className="gap-2 min-w-[180px] justify-between transition-all duration-300 hover:shadow-lg hover:shadow-primary/10"
+            >
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <div className="relative">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-primary/40 flex items-center justify-center">
+                    <Brain className="w-4 h-4 text-primary" />
+                  </div>
+                  <span className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full bg-green-500 border-2 border-background" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium truncate">{MODEL_LABELS[model] || model}</p>
+                  <p className="text-[10px] text-muted-foreground truncate">{model}</p>
+                </div>
+              </div>
+              <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="start" className="w-72 p-2">
+            <p className="px-2 py-1 text-xs text-muted-foreground">Modelo atual</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      {isOpen && (
+        <div
+          className="absolute bottom-full left-0 right-0 mb-2 z-50 animate-slide-up"
+          role="menu"
+        >
+          <div className="bg-white dark:bg-slate-800 border border-border rounded-xl shadow-xl overflow-hidden p-2">
+            {MODEL_OPTIONS.map((m) => (
+              <button
+                key={m}
+                role="menuitem"
+                onClick={() => onChange(m)}
+                className={`w-full px-3 py-2 rounded-lg text-left transition-all duration-200 flex items-center gap-3 ${
+                  model === m
+                    ? "bg-primary text-primary-foreground shadow-md"
+                    : "hover:bg-muted text-foreground"
+                }`}
+                onMouseEnter={() => setHovered(m)}
+                onMouseLeave={() => setHovered(null)}
+              >
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                  model === m
+                    ? "bg-primary-foreground/20"
+                    : "bg-muted"
+                }`}>
+                  <Brain className={`w-4 h-4 ${model === m ? "text-primary-foreground" : "text-muted-foreground"}`} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`font-medium truncate ${model === m ? "text-primary-foreground" : ""}`}>
+                    {MODEL_LABELS[m] || m}
+                  </p>
+                  <p className={`text-[10px] truncate ${model === m ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                    {m}
+                  </p>
+                </div>
+                {model === m && (
+                  <CheckCircle className="w-4 h-4 text-primary-foreground flex-shrink-0" />
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const KeyManagementButton: React.FC<{
+  apiKey: string;
+  onChangeKey: () => void;
+  onTestKey: () => Promise<void>;
+  testing: boolean;
+}> = ({ apiKey, onChangeKey, onTestKey, testing }) => {
+  const [showMenu, setShowMenu] = useState(false);
+  const [showTestResult, setShowTestResult] = useState<"success" | "error" | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleTest = async () => {
+    setShowTestResult(null);
+    try {
+      await onTestKey();
+      setShowTestResult("success");
+    } catch {
+      setShowTestResult("error");
+    }
+    setShowMenu(false);
+  };
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowMenu(!showMenu)}
+              className="relative p-2 rounded-xl transition-all hover:bg-primary/10"
+              aria-label="Gerenciar chave da API"
+            >
+              <Key className="w-5 h-5 text-muted-foreground hover:text-foreground transition-colors" />
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-green-500 border-2 border-background" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="end">
+            <p className="text-xs">Gerenciar chave da API</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      {showMenu && (
+        <div className="absolute right-0 top-full mt-2 z-50 animate-slide-down" role="menu">
+          <div className="bg-white dark:bg-slate-800 border border-border rounded-xl shadow-xl overflow-hidden min-w-[240px] p-2">
+            <div className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider border-b">
+              Chave da API
+            </div>
+            <button
+              role="menuitem"
+              onClick={onChangeKey}
+              className="w-full px-3 py-2 rounded-lg text-left transition-colors hover:bg-muted flex items-center gap-3"
+            >
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                <RotateCcw className="w-4 h-4 text-primary" />
+              </div>
+              <span>Trocar chave</span>
+            </button>
+            <button
+              role="menuitem"
+              onClick={handleTest}
+              disabled={testing}
+              className="w-full px-3 py-2 rounded-lg text-left transition-colors hover:bg-muted flex items-center gap-3 disabled:opacity-50"
+            >
+              <div className="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                <Sparkles className="w-4 h-4 text-green-600 dark:text-green-400" />
+              </div>
+              <span>{testing ? "Testando..." : "Testar conexão"}</span>
+            </button>
+            {showTestResult && (
+              <div className={`px-3 py-2 text-xs flex items-center gap-2 ${showTestResult === "success" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                {showTestResult === "success" ? (
+                  <>
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    Conexão OK
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="w-3.5 h-3.5" />
+                    Falha na conexão
+                  </>
+                )}
+              </div>
+            )}
+            <div className="px-3 py-2 text-xs text-muted-foreground border-t">
+              Chave salva localmente e no Dropbox (se sincronizado)
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default function AiAssistant() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -134,7 +524,10 @@ export default function AiAssistant() {
   const [liveModel, setLiveModel] = useState<string>("gemini-3.8-live");
   const [pendingProposal, setPendingProposal] = useState<Proposal | null>(null);
   const [proposalError, setProposalError] = useState<string | null>(null);
-  
+  const [showModelSelector, setShowModelSelector] = useState(false);
+  const [showKeyTutorial, setShowKeyTutorial] = useState(false);
+  const [testingKey, setTestingKey] = useState(false);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -144,16 +537,15 @@ export default function AiAssistant() {
   const { toast } = useToast();
   const [recipes, setRecipes] = useRecipes();
   const [inventory, setInventory] = useInventory();
+  const [settings, saveSettingsHook] = useSettings();
 
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  const apiKey = settings.geminiApiKey || import.meta.env.VITE_GEMINI_API_KEY || "";
+  const selectedModel = settings.geminiModel || DEFAULT_GEMINI_3_MODEL;
 
   const live = useGeminiLive({
     apiKey: apiKey || "",
     model: liveModel,
-    onResponse: (text) => {
-      // In Live mode, we might want to append to a special "live" message
-      // or just handle it as transient. For now, let's keep it in context.
-    },
+    onResponse: (text) => {},
     onError: (err) => {
       toast({
         title: "Erro no Gemini Live",
@@ -318,6 +710,32 @@ export default function AiAssistant() {
     }, 0);
   };
 
+  const handleSaveKey = useCallback((key: string) => {
+    saveSettingsHook({ geminiApiKey: key });
+    toast({ title: "Chave salva", description: "Sua chave da API foi salva e sincronizada." });
+  }, [saveSettingsHook, toast]);
+
+  const handleTestKey = useCallback(async (key?: string) => {
+    const keyToTest = key || apiKey;
+    if (!keyToTest) return;
+    setTestingKey(true);
+    try {
+      const gemini = new GeminiService(keyToTest);
+      await gemini.chat([{ role: "user", content: "Olá" }], undefined, new AbortController().signal);
+      toast({ title: "Conexão OK", description: "A chave da API está funcionando corretamente." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha ao testar chave";
+      toast({ title: "Erro na conexão", description: message, variant: "destructive" });
+      throw error;
+    } finally {
+      setTestingKey(false);
+    }
+  }, [apiKey, toast]);
+
+  const handleChangeKey = useCallback(() => {
+    setShowKeyTutorial(true);
+  }, []);
+
   const handleSend = async (event?: React.FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
 
@@ -331,13 +749,12 @@ export default function AiAssistant() {
     if (!apiKey) {
       toast({
         title: "API Key não configurada",
-        description: "Configure VITE_GEMINI_API_KEY no seu arquivo .env",
+        description: "Insira sua chave da API no painel acima para usar o assistente.",
         variant: "destructive",
       });
       return;
     }
 
-    // Safeguard: never fire a second request while one is still running (double clicks / Enter spam)
     if (isLoading || sendLockRef.current) return;
     const waitMs = geminiLimiter.waitTime();
     if (waitMs > 0) {
@@ -374,13 +791,13 @@ export default function AiAssistant() {
     setActualModelUsed(null);
 
     try {
-      const gemini = new GeminiService(apiKey);
+      const gemini = new GeminiService(apiKey, selectedModel);
 
       const context = buildCopilotContext({ recipes, inventory, settings: readSettings() });
 
       const streamResult = await gemini.chatStream([...messages, userMessage], context, nextAbortController.signal);
       let streamedText = "";
-      
+
       setActualModelUsed(streamResult.modelUsed);
       setFallbackOccurred(streamResult.isFallback);
 
@@ -695,6 +1112,29 @@ export default function AiAssistant() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] max-w-4xl mx-auto">
+      <style jsx>{`
+        @keyframes slide-in {
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slide-up {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slide-down {
+          from { opacity: 0; transform: translateY(-8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fade-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        .animate-slide-in { animation: slide-in 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        .animate-slide-up { animation: slide-up 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+        .animate-slide-down { animation: slide-down 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+        .animate-fade-in { animation: fade-in 0.3s ease-out; }
+      `}</style>
+
       <div className="mb-4 flex w-full flex-col flex-wrap items-start justify-between gap-4 md:flex-row md:items-center">
         <div className="flex w-full flex-row flex-wrap items-center gap-2 md:w-auto">
           <img src={geminiLogo} alt="Assistente IA" className="w-16 h-16 object-contain" />
@@ -706,7 +1146,7 @@ export default function AiAssistant() {
                   <TooltipTrigger asChild>
                     <div className="flex items-center gap-1.5 cursor-help">
                       <Badge variant="secondary" className="text-[10px] py-0 h-5 font-normal">
-                        {actualModelUsed || DEFAULT_GEMINI_3_MODEL}
+                        {actualModelUsed || selectedModel}
                       </Badge>
                       {fallbackOccurred && (
                         <Badge variant="outline" className="text-[10px] py-0 h-5 border-amber-500 text-amber-600 bg-amber-50">
@@ -716,7 +1156,7 @@ export default function AiAssistant() {
                     </div>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p className="text-xs">Modelo em uso: {actualModelUsed || DEFAULT_GEMINI_3_MODEL}</p>
+                    <p className="text-xs">Modelo em uso: {actualModelUsed || selectedModel}</p>
                     {fallbackOccurred && <p className="text-xs text-amber-600 mt-1">O modelo principal atingiu limite de cota.</p>}
                   </TooltipContent>
                 </Tooltip>
@@ -725,10 +1165,23 @@ export default function AiAssistant() {
           </div>
         </div>
         <div className="flex w-full flex-row flex-wrap gap-2 md:w-auto">
+          <ModelSelector
+            model={selectedModel}
+            onChange={(m) => saveSettingsHook({ geminiModel: m })}
+            isOpen={showModelSelector}
+            onToggle={() => setShowModelSelector(!showModelSelector)}
+          />
+          {apiKey && (
+            <KeyManagementButton
+              apiKey={apiKey}
+              onChangeKey={handleChangeKey}
+              onTestKey={handleTestKey}
+              testing={testingKey}
+            />
+          )}
           <Button variant="outline" size="sm" onClick={() => setIsHistoryOpen((prev) => !prev)}>
             Histórico
           </Button>
-
           <Button variant="outline" size="sm" onClick={clearConversation}>
             <Trash2 className="w-4 h-4 mr-2" />
             Limpar
@@ -744,20 +1197,19 @@ export default function AiAssistant() {
       </div>
 
       {!apiKey && (
-        <Card className="mb-4 border-destructive bg-destructive/10">
-          <CardContent className="flex items-center gap-3 p-4">
-            <AlertCircle className="text-destructive" />
-            <div>
-              <p className="font-semibold text-destructive">API Key não configurada</p>
-              <p className="text-sm">VITE_GEMINI_API_KEY não foi encontrada. O assistente não funcionará sem uma chave válida.</p>
-            </div>
-          </CardContent>
-        </Card>
+        <ApiKeySetupCard
+          apiKey=""
+          onSave={handleSaveKey}
+          onTest={handleTestKey}
+          testing={testingKey}
+          showTutorial={showKeyTutorial}
+          onToggleTutorial={() => setShowKeyTutorial(!showKeyTutorial)}
+        />
       )}
 
       <div className="flex flex-1 gap-4 min-h-0">
         {isHistoryOpen && (
-          <aside className="w-80 shrink-0 rounded-xl border border-slate-700/80 bg-slate-900/90 text-slate-100 shadow-lg backdrop-blur-sm overflow-hidden">
+          <aside className="w-80 shrink-0 rounded-xl border border-slate-700/80 bg-slate-900/90 text-slate-100 shadow-lg backdrop-blur-sm overflow-hidden animate-slide-in">
             <div className="border-b border-slate-700/80 p-3">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold">Histórico de chats</h2>
@@ -861,8 +1313,8 @@ export default function AiAssistant() {
                         </div>
                         <div className="space-y-2">
                           <div className={`p-3 rounded-2xl ${
-                            m.role === "user" 
-                            ? "bg-primary text-primary-foreground rounded-tr-none" 
+                            m.role === "user"
+                            ? "bg-primary text-primary-foreground rounded-tr-none"
                             : "bg-white dark:bg-slate-800 border rounded-tl-none shadow-sm"
                           }`}>
                             {m.image && (
@@ -886,9 +1338,9 @@ export default function AiAssistant() {
                             <div className="rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/20 p-3 text-sm text-amber-900 dark:text-amber-100">
                               <p className="font-medium">Resposta vazia da IA</p>
                               <p className="mt-1">A IA não retornou conteúdo útil. Você pode tentar novamente.</p>
-                              <Button 
-                                variant="secondary" 
-                                size="sm" 
+                              <Button
+                                variant="secondary"
+                                size="sm"
                                 className="mt-3 w-full gap-2"
                                 type="button"
                                 onClick={retryLastRequest}
@@ -921,7 +1373,7 @@ export default function AiAssistant() {
           </ScrollArea>
 
           {(pendingProposal || proposalError) && (
-            <div className="border-t p-4 bg-amber-50/70 dark:bg-amber-950/20 space-y-3">
+            <div className="border-t p-4 bg-amber-50/70 dark:bg-amber-950/20 space-y-3 animate-slide-in">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <p className="font-semibold text-sm">Confirmação necessária (nenhuma alteração aplicada automaticamente)</p>
                 {pendingProposal && <Badge variant="outline">{pendingProposal.kind === "CREATE_RECIPE" ? "Criar receita" : pendingProposal.kind === "UPDATE_RECIPE" ? "Editar receita" : "Alterar inventário"}</Badge>}
@@ -987,7 +1439,7 @@ export default function AiAssistant() {
             {selectedImage && (
               <div className="relative inline-block mb-2">
                 <img src={selectedImage} alt="Preview" className="h-20 w-20 object-cover rounded-md border" />
-                <button 
+                <button
                   type="button"
                   onClick={() => setSelectedImage(null)}
                   className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 shadow-lg"
@@ -1004,9 +1456,9 @@ export default function AiAssistant() {
                 ref={fileInputRef}
                 onChange={handleImageUpload}
               />
-              <Button 
-                variant="outline" 
-                size="icon" 
+              <Button
+                variant="outline"
+                size="icon"
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isLoading}
@@ -1042,23 +1494,23 @@ export default function AiAssistant() {
                   <Mic className={`w-5 h-5 ${isRecording ? "text-red-500 animate-pulse" : ""}`} />
                 </Button>
                 {live.isActive && (
-                   <select 
-                     value={liveModel} 
-                     onChange={(e) => setLiveModel(e.target.value)}
-                     className="absolute -top-8 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-800 border rounded text-[10px] px-1 shadow-sm"
-                   >
-                     {GEMINI_3_LIVE_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
-                   </select>
+                  <select
+                    value={liveModel}
+                    onChange={(e) => setLiveModel(e.target.value)}
+                    className="absolute -top-8 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-800 border rounded text-[10px] px-1 shadow-sm"
+                  >
+                    {GEMINI_3_LIVE_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
                 )}
               </div>
               <Input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Pergunte sobre sua cerveja..."
-                disabled={isLoading}
+                placeholder={apiKey ? "Pergunte sobre sua cerveja..." : "Configure a chave da API para começar"}
+                disabled={isLoading || !apiKey}
                 className="flex-1"
               />
-              <Button type="submit" disabled={isLoading || (!input.trim() && !selectedImage)}>
+              <Button type="submit" disabled={isLoading || (!input.trim() && !selectedImage) || !apiKey}>
                 <Send className="w-5 h-5" />
               </Button>
             </div>
