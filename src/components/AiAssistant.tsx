@@ -21,6 +21,8 @@ import {
   RotateCcw,
   CheckCircle,
   XCircle,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -140,16 +142,19 @@ const MODEL_LABELS: Record<string, string> = {
 };
 
 const ApiKeySetupCard: React.FC<{
-  apiKey: string;
+  currentKey: string;
   onSave: (key: string) => void;
   onTest: (key: string) => Promise<void>;
+  onClose: () => void;
   testing: boolean;
   showTutorial: boolean;
   onToggleTutorial: () => void;
-}> = ({ apiKey, onSave, onTest, testing, showTutorial, onToggleTutorial }) => {
-  const [key, setKey] = useState(apiKey);
+}> = ({ currentKey, onSave, onTest, onClose, testing, showTutorial, onToggleTutorial }) => {
+  const [key, setKey] = useState(currentKey);
   const [saved, setSaved] = useState(false);
+  const [showKey, setShowKey] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const initialKey = currentKey;
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -169,23 +174,39 @@ const ApiKeySetupCard: React.FC<{
     }
   };
 
+  const hasChanges = key !== initialKey;
+
   return (
-    <Card className="mb-4 border-primary/50 bg-primary/5 dark:bg-primary/10 animate-slide-in">
+    <Card className="mb-4 border-primary/50 bg-primary/5 dark:bg-primary/10 animate-slide-in relative">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="absolute top-2 right-2 z-10"
+        onClick={onClose}
+        aria-label="Fechar"
+      >
+        <XCircle className="w-5 h-5 text-muted-foreground hover:text-foreground" />
+      </Button>
       <CardContent className="p-4 sm:p-6">
         <div className="flex items-start gap-4">
           <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center">
             <Key className="w-6 h-6 text-primary" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-lg font-semibold text-foreground">Chave da API Gemini necessária</h3>
+            <h3 className="text-lg font-semibold text-foreground">
+              {initialKey ? "Trocar chave da API Gemini" : "Chave da API Gemini necessária"}
+            </h3>
             <p className="text-sm text-muted-foreground mt-1">
-              Insira sua chave da API do Google AI Studio para usar o assistente de IA. A chave é salva localmente no seu navegador e sincronizada com seu Dropbox (se configurado).
+              {initialKey
+                ? "Insira a nova chave da API do Google AI Studio. A chave atual será substituída."
+                : "Insira sua chave da API do Google AI Studio para usar o assistente de IA."}
+              A chave é salva localmente no seu navegador e sincronizada com seu Dropbox (se configurado).
             </p>
             <div className="mt-4 flex flex-col sm:flex-row gap-3">
               <div className="flex-1 relative">
                 <Input
                   ref={inputRef}
-                  type="password"
+                  type={showKey ? "text" : "password"}
                   value={key}
                   onChange={(e) => setKey(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSave()}
@@ -193,21 +214,32 @@ const ApiKeySetupCard: React.FC<{
                   className="pr-10"
                   disabled={testing}
                 />
-                {key && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-2 top-1/2 -translate-y-1/2"
-                    onClick={() => setKey("")}
-                    aria-label="Limpar chave"
-                  >
-                    <XCircle className="w-4 h-4" />
-                  </Button>
-                )}
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                  {key && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setShowKey(!showKey)}
+                      aria-label={showKey ? "Ocultar chave" : "Mostrar chave"}
+                    >
+                      {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </Button>
+                  )}
+                  {key && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setKey("")}
+                      aria-label="Limpar chave"
+                    >
+                      <XCircle className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
               <Button
                 onClick={handleSave}
-                disabled={!key.trim() || testing}
+                disabled={!key.trim() || testing || !hasChanges}
                 className="whitespace-nowrap"
               >
                 {saved ? (
@@ -665,12 +697,8 @@ export default function AiAssistant() {
   }, [apiKey, toast]);
 
   const handleChangeKey = useCallback(() => {
-    if (apiKey) {
-      // Clear the current key first, then show setup card
-      saveSettingsHook({ geminiApiKey: "" });
-    }
     setShowKeyTutorial(true);
-  }, [apiKey, saveSettingsHook]);
+  }, []);
 
   const handleSend = async (event?: React.FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
@@ -1135,9 +1163,10 @@ export default function AiAssistant() {
 
       {(!apiKey || showKeyTutorial) && (
         <ApiKeySetupCard
-          apiKey=""
+          currentKey={apiKey}
           onSave={handleSaveKey}
           onTest={handleTestKey}
+          onClose={() => setShowKeyTutorial(false)}
           testing={testingKey}
           showTutorial={showKeyTutorial}
           onToggleTutorial={() => setShowKeyTutorial(!showKeyTutorial)}
