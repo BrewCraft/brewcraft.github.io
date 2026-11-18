@@ -1133,7 +1133,7 @@ export default function AiAssistant() {
         </div>
       </div>
 
-      {!apiKey && (
+      {(!apiKey || showKeyTutorial) && (
         <ApiKeySetupCard
           apiKey=""
           onSave={handleSaveKey}
