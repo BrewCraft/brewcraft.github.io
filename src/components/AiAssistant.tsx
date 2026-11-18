@@ -29,6 +29,12 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { GeminiService, geminiLimiter, type Message, GEMINI_3_LIVE_MODELS, GEMINI_3_FALLBACK_MODELS, DEFAULT_GEMINI_3_MODEL, supportsImages } from "@/lib/gemini";
 import { useGeminiLive } from "@/hooks/use-gemini-live";
@@ -349,92 +355,27 @@ const ApiKeySetupCard: React.FC<{
 const ModelSelector: React.FC<{
   model: string;
   onChange: (model: string) => void;
-  isOpen: boolean;
-  onToggle: () => void;
-}> = ({ model, onChange, isOpen, onToggle }) => {
-  const [hovered, setHovered] = useState<string | null>(null);
-
+}> = ({ model, onChange }) => {
   return (
-    <div className="flex items-center gap-2">
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-primary/40 flex items-center justify-center shrink-0">
-              <Brain className="w-4 h-4 text-primary" />
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="right" align="center" className="w-72 p-2">
-            <p className="px-2 py-1 text-xs text-muted-foreground">Selecionar modelo</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onToggle}
-              className="gap-2 min-w-[180px] justify-between transition-all duration-300 hover:shadow-lg hover:shadow-primary/10"
-            >
-              <div className="flex items-center gap-2 flex-1 min-w-0">
-                <div className="min-w-0">
-                  <p className="text-xs font-medium truncate">{MODEL_LABELS[model] || model}</p>
-                  <p className="text-[10px] text-muted-foreground truncate">{model}</p>
-                </div>
-              </div>
-              <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="start" className="w-72 p-2">
-            <p className="px-2 py-1 text-xs text-muted-foreground">Modelo atual</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-
-      {isOpen && (
-        <div
-          className="absolute bottom-full left-0 right-0 mb-2 z-50 animate-slide-up"
-          role="menu"
-        >
-          <div className="bg-white dark:bg-slate-800 border border-border rounded-xl shadow-xl overflow-hidden p-2">
-            {MODEL_OPTIONS.map((m) => (
-              <button
-                key={m}
-                role="menuitem"
-                onClick={() => onChange(m)}
-                className={`w-full px-3 py-2 rounded-lg text-left transition-all duration-200 flex items-center gap-3 ${
-                  model === m
-                    ? "bg-primary text-primary-foreground shadow-md"
-                    : "hover:bg-muted text-foreground"
-                }`}
-                onMouseEnter={() => setHovered(m)}
-                onMouseLeave={() => setHovered(null)}
-              >
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                  model === m
-                    ? "bg-primary-foreground/20"
-                    : "bg-muted"
-                }`}>
-                  <Brain className={`w-4 h-4 ${model === m ? "text-primary-foreground" : "text-muted-foreground"}`} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className={`font-medium truncate ${model === m ? "text-primary-foreground" : ""}`}>
-                    {MODEL_LABELS[m] || m}
-                  </p>
-                  <p className={`text-[10px] truncate ${model === m ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                    {m}
-                  </p>
-                </div>
-                {model === m && (
-                  <CheckCircle className="w-4 h-4 text-primary-foreground flex-shrink-0" />
-                )}
-              </button>
-            ))}
+    <div className="flex items-center gap-1.5">
+      <Select value={model} onValueChange={onChange}>
+        <SelectTrigger className="h-9 min-w-[190px] max-w-[240px] text-xs font-medium gap-2">
+          <div className="flex items-center gap-2 truncate">
+            <Brain className="w-4 h-4 text-primary shrink-0" />
+            <span className="truncate">{MODEL_LABELS[model] || model}</span>
           </div>
-        </div>
-      )}
+        </SelectTrigger>
+        <SelectContent align="end" className="max-h-72">
+          {MODEL_OPTIONS.map((m) => (
+            <SelectItem key={m} value={m} className="text-xs py-2 cursor-pointer">
+              <div className="flex items-center gap-2">
+                <Brain className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                <span>{MODEL_LABELS[m] || m}</span>
+              </div>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 };
@@ -488,7 +429,6 @@ export default function AiAssistant() {
   const [liveModel, setLiveModel] = useState<string>("gemini-3.8-live");
   const [pendingProposal, setPendingProposal] = useState<Proposal | null>(null);
   const [proposalError, setProposalError] = useState<string | null>(null);
-  const [showModelSelector, setShowModelSelector] = useState(false);
   const [showKeyTutorial, setShowKeyTutorial] = useState(false);
   const [testingKey, setTestingKey] = useState(false);
 
@@ -1130,36 +1070,19 @@ export default function AiAssistant() {
           <img src={geminiLogo} alt="Assistente IA" className="w-16 h-16 object-contain" />
           <div>
             <h1 className="text-2xl font-bold">Assistente IA</h1>
-            <div className="flex items-center gap-2 mt-1">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="flex items-center gap-1.5 cursor-help">
-                      <Badge variant="secondary" className="text-[10px] py-0 h-5 font-normal">
-                        {actualModelUsed || selectedModel}
-                      </Badge>
-                      {fallbackOccurred && (
-                        <Badge variant="outline" className="text-[10px] py-0 h-5 border-amber-500 text-amber-600 bg-amber-50">
-                          Fallback Ativo
-                        </Badge>
-                      )}
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p className="text-xs">Modelo em uso: {actualModelUsed || selectedModel}</p>
-                    {fallbackOccurred && <p className="text-xs text-amber-600 mt-1">O modelo principal atingiu limite de cota.</p>}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
+            {fallbackOccurred && (
+              <div className="mt-1">
+                <Badge variant="outline" className="text-[10px] py-0 h-5 border-amber-500 text-amber-600 bg-amber-50">
+                  Fallback Ativo
+                </Badge>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex w-full flex-row flex-wrap gap-2 md:w-auto">
           <ModelSelector
             model={selectedModel}
             onChange={(m) => saveSettingsHook({ geminiModel: m })}
-            isOpen={showModelSelector}
-            onToggle={() => setShowModelSelector(!showModelSelector)}
           />
           {apiKey && (
             <KeyManagementButton
