@@ -1,5 +1,6 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ReactNode } from "react";
 
 interface LayoutProps {
@@ -20,7 +21,9 @@ export default function Layout({ children }: LayoutProps) {
             </div>
           </header>
           <div className="flex-1 p-6">
-            {children}
+            <ErrorBoundary>
+              {children}
+            </ErrorBoundary>
           </div>
         </main>
       </div>

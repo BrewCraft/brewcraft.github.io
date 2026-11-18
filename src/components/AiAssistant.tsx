@@ -30,7 +30,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { GeminiService, geminiLimiter, type Message, GEMINI_3_LIVE_MODELS, GEMINI_3_FALLBACK_MODELS, DEFAULT_GEMINI_3_MODEL } from "@/lib/gemini";
+import { GeminiService, geminiLimiter, type Message, GEMINI_3_LIVE_MODELS, GEMINI_3_FALLBACK_MODELS, DEFAULT_GEMINI_3_MODEL, supportsImages } from "@/lib/gemini";
 import { useGeminiLive } from "@/hooks/use-gemini-live";
 import { buildCopilotContext, proposeRecipeCreate, proposeRecipeUpdate, proposeInventoryAdd, applyProposal, executeCalculator, extractJsonObject, type Proposal } from "@/lib/ai-copilot";
 import { readSettings, saveSettings, useSettings } from "@/lib/settings";
@@ -127,7 +127,7 @@ const parseAiAction = (content: string): AiAction | null => {
 
 const MODEL_OPTIONS = [
   ...GEMINI_3_LIVE_MODELS,
-  ...GEMINI_3_FALLBACK_MODELS.filter(m => !GEMINI_3_LIVE_MODELS.includes(m)),
+  ...GEMINI_3_FALLBACK_MODELS.filter(m => !(GEMINI_3_LIVE_MODELS as readonly string[]).includes(m)),
 ] as const;
 
 const MODEL_LABELS: Record<string, string> = {
@@ -560,21 +560,6 @@ export default function AiAssistant() {
     };
   }, []);
 
-  // Escape key to dismiss proposals and API key card
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (pendingProposal) {
-          rejectProposal();
-        } else if (showKeyTutorial) {
-          setShowKeyTutorial(false);
-        }
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [pendingProposal, showKeyTutorial, rejectProposal]);
-
   const toggleRecording = () => {
     if (typeof window === "undefined") return;
 
@@ -655,7 +640,7 @@ export default function AiAssistant() {
     recognition.start();
   };
 
-  const persistChatHistory = (nextMessages: Message[], chatIdOverride?: string) => {
+  const persistChatHistory = useCallback((nextMessages: Message[], chatIdOverride?: string) => {
     const sessionId = chatIdOverride ?? activeChatId ?? uid();
     const firstUserMessage = nextMessages.find((message) => message.role === "user")?.content?.trim();
     const title = (firstUserMessage && firstUserMessage.length > 0 ? firstUserMessage : "Nova conversa")
@@ -678,7 +663,7 @@ export default function AiAssistant() {
       writeStoredAiChats(nextHistory);
       return nextHistory;
     });
-  };
+  }, [activeChatId]);
 
   const retryLastRequest = () => {
     if (!retryMessage) return;
@@ -732,6 +717,14 @@ export default function AiAssistant() {
         variant: "destructive",
       });
       return;
+    }
+
+    if (selectedImage && !supportsImages(selectedModel)) {
+      toast({
+        title: "Imagem ignorada",
+        description: `O modelo ${selectedModel} não suporta imagens. Selecione um modelo multimodal (gemini-3.6-flash, gemini-3.5-flash, gemini-3.7-flash, gemini-3.8-flash ou gemini-3.8-live) para enviar imagens.`,
+        variant: "default",
+      });
     }
 
     if (isLoading || sendLockRef.current) return;
@@ -1075,12 +1068,30 @@ export default function AiAssistant() {
     setPendingProposal(null); setProposalError(null);
   };
 
-  const rejectProposal = () => {
+  const rejectProposal = useCallback(() => {
     if (!pendingProposal) return;
     const msg: Message = { role: "model", content: "Proposta rejeitada. Nenhuma alteração foi aplicada." };
-    const next = [...messages, msg]; setMessages(next); persistChatHistory(next, activeChatId ?? undefined);
-    setPendingProposal(null); setProposalError(null);
-  };
+    const next = [...messages, msg];
+    setMessages(next);
+    persistChatHistory(next, activeChatId ?? undefined);
+    setPendingProposal(null);
+    setProposalError(null);
+  }, [pendingProposal, messages, activeChatId, persistChatHistory]);
+
+  // Escape key to dismiss proposals and API key card
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (pendingProposal) {
+          rejectProposal();
+        } else if (showKeyTutorial) {
+          setShowKeyTutorial(false);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [pendingProposal, showKeyTutorial, rejectProposal]);
 
   const applyAiAction = (content: string) => {
     const obj = extractJsonObject(content);
@@ -1091,7 +1102,7 @@ export default function AiAssistant() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] max-w-4xl mx-auto">
-      <style jsx>{`
+      <style>{`
         @keyframes slide-in {
           from { opacity: 0; transform: translateY(-10px); }
           to { opacity: 1; transform: translateY(0); }
