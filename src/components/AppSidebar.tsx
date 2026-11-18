@@ -42,7 +42,7 @@ type OfflineReleaseInfo = {
 };
 
 const OFFLINE_RELEASE_TAG = "offline-latest";
-const OFFLINE_RELEASE_REPO = "BrewCraft/brewcraft.github.io";
+const OFFLINE_RELEASE_REPO = (import.meta.env.VITE_OFFLINE_REPO as string | undefined) || "BrewCraft/brewcraft.github.io";
 
 function formatOfflineDate(value: string | undefined, locale: string) {
   if (!value) return null;
@@ -107,7 +107,8 @@ export function AppSidebar() {
           tag_name?: string;
           name?: string;
           published_at?: string;
-          assets?: Array<{ name?: string; browser_download_url?: string; state?: string }>;
+          updated_at?: string;
+          assets?: Array<{ name?: string; browser_download_url?: string; state?: string; updated_at?: string }>;
         };
 
         if (data.draft) {
@@ -127,7 +128,7 @@ export function AppSidebar() {
 
         const info: OfflineReleaseInfo = {
           version: data.name?.trim() || data.tag_name?.trim() || OFFLINE_RELEASE_TAG,
-          publishedAt: data.published_at,
+          publishedAt: zipAsset.updated_at || data.updated_at || data.published_at,
           downloadUrl: zipAsset.browser_download_url,
         };
 
