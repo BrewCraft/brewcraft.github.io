@@ -17,6 +17,20 @@ export const GEMINI_3_FALLBACK_MODELS = [
   "gemini-3.8-flash",
 ] as const;
 
+export const GEMINI_MULTIMODAL_MODELS = [
+  "gemini-3.8-live",
+  "gemini-3.8-live-extended-thinking",
+  "gemini-3.7-flash",
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3.8-flash",
+] as const;
+
+export const supportsImages = (modelName: string): boolean => {
+  const normalized = modelName.toLowerCase().trim();
+  return GEMINI_MULTIMODAL_MODELS.some((m) => normalized.includes(m.toLowerCase()));
+};
+
 export type GeminiModelType = typeof GEMINI_3_FALLBACK_MODELS[number] | typeof GEMINI_3_LIVE_MODELS[number];
 
 export const isGemini3TextModel = (modelName?: string | null) => {
@@ -103,6 +117,7 @@ export const GeminiErrorClassification = {
   SERVICE_OVERLOAD: "SERVICE_OVERLOAD", // 503, temporary busy
   AUTH_INVALID: "AUTH_INVALID",       // 401, 403
   NOT_FOUND: "NOT_FOUND",             // 404
+  IMAGE_NOT_SUPPORTED: "IMAGE_NOT_SUPPORTED", // Model doesn't support image input
   OTHER: "OTHER"
 } as const;
 export type GeminiErrorClassification = (typeof GeminiErrorClassification)[keyof typeof GeminiErrorClassification];
@@ -201,7 +216,8 @@ export class GeminiService {
     };
   }
 
-  private buildContents(messages: Message[], context?: unknown): Content[] {
+  private buildContents(messages: Message[], context?: unknown, modelName?: string): Content[] {
+    const supportsMultimodal = modelName ? supportsImages(modelName) : false;
     return messages.map((message, index) => {
       const role = message.role === "system" ? "user" : message.role === "model" ? "model" : "user";
       const parts: Part[] = [];
@@ -216,7 +232,7 @@ export class GeminiService {
         parts.push({ text });
       }
 
-      if (message.image) {
+      if (message.image && supportsMultimodal) {
         const imageData = message.image.includes(",") ? message.image.split(",")[1] : message.image;
         const mimeMatch = message.image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
         const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
@@ -245,6 +261,10 @@ export class GeminiService {
     }
 
     if (status === 404) return GeminiErrorClassification.NOT_FOUND;
+
+    if (message.includes("IMAGE") && message.includes("SUPPORT") && message.includes("MODEL")) {
+      return GeminiErrorClassification.IMAGE_NOT_SUPPORTED;
+    }
 
     if (status === 429) {
       if (message.includes("BILLING") || message.includes("PLAN") || message.includes("PROJECT QUOTA") || message.includes("ACCOUNT")) {
@@ -296,6 +316,7 @@ export class GeminiService {
     const models = this.modelsToTry();
     let lastError: GeminiError | null = null;
     let overloadRetried = false;
+    let imageNotSupportedRetried = false;
 
     for (let i = 0; i < models.length; i++) {
       const modelName = models[i];
@@ -316,15 +337,22 @@ export class GeminiService {
         if (classification === GeminiErrorClassification.MODEL_LIMIT) {
           const delay = parseRetryDelayMs(error) ?? GEMINI_LIMITS.defaultCooldownMs;
           this.markModelUnavailable(modelName, classification, delay);
-          // short pause so the fallback does not fire in the same instant
           geminiLimiter.pauseFor(GEMINI_LIMITS.minIntervalMs);
           if (i === models.length - 1) throw new GeminiRateLimitError(delay);
           await this.wait(GEMINI_LIMITS.minIntervalMs);
           continue;
         }
         if (classification === GeminiErrorClassification.NOT_FOUND) {
-          // model does not exist for this key: skip it for an hour instead of retrying every message
           this.markModelUnavailable(modelName, classification, 60 * 60 * 1000);
+          continue;
+        }
+        if (classification === GeminiErrorClassification.IMAGE_NOT_SUPPORTED && !imageNotSupportedRetried) {
+          imageNotSupportedRetried = true;
+          // The image was already filtered by buildContents for unsupported models,
+          // but if we still get this error, it means the model changed during fallback.
+          // Log and continue to next model.
+          console.warn(`Model ${modelName} doesn't support images, trying next model`);
+          await this.wait(GEMINI_LIMITS.minIntervalMs);
           continue;
         }
         if (classification === GeminiErrorClassification.SERVICE_OVERLOAD && !overloadRetried) {
@@ -343,7 +371,7 @@ export class GeminiService {
   async chat(messages: Message[], context?: unknown, signal?: AbortSignal): Promise<ChatResponse> {
     try {
       const { result, modelUsed } = await this.run((model) =>
-        this.ai.models.generateContent({ model, contents: this.buildContents(messages, context), config: this.getRequestConfig(signal) }),
+        this.ai.models.generateContent({ model, contents: this.buildContents(messages, context, model), config: this.getRequestConfig(signal) }),
       );
       return { text: result.text?.trim() || "", modelUsed, isFallback: modelUsed !== this.modelName };
     } catch (error) {
@@ -355,7 +383,7 @@ export class GeminiService {
 
   async chatStream(messages: Message[], context?: unknown, signal?: AbortSignal) {
     const { result, modelUsed } = await this.run((model) =>
-      this.ai.models.generateContentStream({ model, contents: this.buildContents(messages, context), config: this.getRequestConfig(signal) }),
+      this.ai.models.generateContentStream({ model, contents: this.buildContents(messages, context, model), config: this.getRequestConfig(signal) }),
     );
     return { stream: result, modelUsed, isFallback: modelUsed !== this.modelName };
   }
