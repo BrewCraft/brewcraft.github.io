@@ -560,6 +560,21 @@ export default function AiAssistant() {
     };
   }, []);
 
+  // Escape key to dismiss proposals and API key card
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (pendingProposal) {
+          rejectProposal();
+        } else if (showKeyTutorial) {
+          setShowKeyTutorial(false);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [pendingProposal, showKeyTutorial, rejectProposal]);
+
   const toggleRecording = () => {
     if (typeof window === "undefined") return;
 
@@ -1394,7 +1409,7 @@ export default function AiAssistant() {
                   {pendingProposal.warnings?.length ? <div className="text-xs text-amber-700">Avisos: {pendingProposal.warnings.join("; ")}</div> : null}
                   <div className="flex gap-2 flex-wrap">
                     <Button size="sm" onClick={approveProposal}>Aprovar e aplicar</Button>
-                    <Button size="sm" variant="outline" onClick={rejectProposal}>Rejeitar</Button>
+                    <Button size="sm" variant="destructive" onClick={rejectProposal}>Rejeitar</Button>
                   </div>
                 </div>
               )}
