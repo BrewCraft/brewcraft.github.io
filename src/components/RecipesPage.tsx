@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Copy, Plus, Search, Star, Trash2, List, LayoutGrid, Grid3X3, Download, FileUp, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { recipeStats, srmToHex } from "@/lib/recipe-calc";
+import { parseBeerXml, recipeToBeerXml } from "@/lib/beerxml";
+import { exportRecipePdf } from "@/lib/pdf-export";
 import { allStyles, fmt, money, uid, useRecipes } from "@/lib/store";
 import CanecaLimpa from "@/components/CanecaLimpa";
 
@@ -73,7 +75,7 @@ export default function RecipesPage() {
           const actions = (
             <div className="flex shrink-0" onClick={e => e.stopPropagation()}>
               <Button variant="ghost" size="icon" aria-label={r.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"} onClick={() => toggleFavorite(r.id)}><Star className={`h-4 w-4 ${r.favorite ? "fill-primary text-primary" : "text-muted-foreground"}`} /></Button>
-              <Button variant="ghost" size="icon" aria-label="Exportar BeerXML" onClick={() => exportRecipe(r)}><Download className="h-4 w-4" /></Button>
+              <Button variant="ghost" size="icon" aria-label="Exportar PDF" onClick={() => exportRecipePdf(r)}><FileUp className="h-4 w-4" /></Button>
               {tab === "library" ? (
                 <Button variant="ghost" size="icon" aria-label="Copiar para minhas receitas" onClick={() => { save([...recipes, { ...structuredClone(r), id: uid(), name: r.name }]); toast.success("Receita copiada"); }}><Copy className="h-4 w-4" /></Button>
               ) : (
