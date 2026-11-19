@@ -11,15 +11,50 @@ export interface RecipeMisc { id: string; name: string; amount: number; unit: st
 export interface Equipment { batchL: number; boilMinutes: number; evaporationLh: number; trubLossL: number; fermenterLossL: number; efficiency: number }
 export interface MashStep { name: string; tempC: number; minutes: number }
 
+export interface RecipeVersion {
+  version: string;
+  note: string;
+  createdAt: string;
+  snapshot: Omit<Recipe, "versions" | "versionHistory">;
+}
+
 export interface Recipe {
   id: string; name: string; styleCode: string; author: string; notes: string;
   equipment: Equipment; mashSteps: MashStep[]; fermentationTempC: number; fermentationDays: number;
   waterProfileId?: string; equipmentProfileId?: string; mashProfileId?: string; fermentationProfileId?: string;
   fermentables: RecipeFermentable[]; hops: RecipeHop[]; yeasts: RecipeYeast[]; miscs: RecipeMisc[];
   favorite?: boolean; createdAt: string; updatedAt: string;
+  version: string;
+  versionHistory: RecipeVersion[];
 }
 
 export const defaultEquipment: Equipment = { batchL: 20, boilMinutes: 60, evaporationLh: 4, trubLossL: 1, fermenterLossL: 1, efficiency: 72 };
+export function createRecipeVersion(recipe: Recipe, note: string = ""): Recipe {
+  const { versions: _v, versionHistory, ...snapshot } = recipe as any;
+  const currentVersion: RecipeVersion = {
+    version: recipe.version,
+    note,
+    createdAt: new Date().toISOString(),
+    snapshot: { ...snapshot },
+  };
+  const [major, minor] = recipe.version.split(".").map(Number);
+  const newVersion = `${major}.${(minor || 0) + 1}`;
+  return {
+    ...recipe,
+    version: newVersion,
+    versionHistory: [...(recipe.versionHistory || []), currentVersion],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function restoreRecipeVersion(recipe: Recipe, targetVersion: string): Recipe {
+  const v = (recipe.versionHistory || []).find((x) => x.version === targetVersion);
+  if (!v) return recipe;
+  return createRecipeVersion(
+    { ...v.snapshot, id: recipe.id, version: v.version, versionHistory: recipe.versionHistory } as Recipe,
+    `Restaurada da versão ${targetVersion}`
+  );
+}
 
 export function volumes(eq: Equipment) {
   const postBoil = eq.batchL + eq.trubLossL;

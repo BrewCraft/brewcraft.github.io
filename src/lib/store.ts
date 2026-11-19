@@ -69,7 +69,7 @@ const seedRecipe: Recipe = {
   ],
   yeasts: [{ id: "y1", name: "SafAle US-05", attenuation: 81, packs: 1, price: 35 }],
   miscs: [{ id: "m1", name: "Whirlfloc", amount: 1, unit: "un", use: "Fervura", price: 2 }],
-  createdAt: now, updatedAt: now,
+  createdAt: now, updatedAt: now, version: "1.0", versionHistory: [],
 };
 const seedInventory: InventoryItem[] = [
   { id: "i1", kind: "fermentavel", name: "Pale Ale", amount: 10, unit: "kg", price: 20, minAmount: 5, potential: 1.037, color: 3 },
@@ -83,7 +83,17 @@ const seeds: Record<Key, unknown[]> = { recipes: [seedRecipe], batches: [], inve
 export function read<T>(key: Key): T[] {
   const raw = localStorage.getItem(KEYS[key]);
   if (raw === null) return seeds[key] as T[];
-  try { return JSON.parse(raw) as T[]; } catch { return []; }
+  try {
+    const parsed = JSON.parse(raw) as T[];
+    if (key === "recipes") {
+      return parsed.map((r: any) => ({
+        ...r,
+        version: r.version || "1.0",
+        versionHistory: r.versionHistory || [],
+      })) as T[];
+    }
+    return parsed;
+  } catch { return []; }
 }
 export function write<T>(key: Key, value: T[]) {
   localStorage.setItem(KEYS[key], JSON.stringify(value));
