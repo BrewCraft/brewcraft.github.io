@@ -7,15 +7,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Beaker, Plus, Save, ShoppingCart, Trash2 } from "lucide-react";
+import { ArrowLeft, Beaker, GitBranch, History, Plus, Save, ShoppingCart, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { fermentables as catFerm, hops as catHops, yeasts as catYeasts, miscs as catMiscs } from "@/lib/catalog";
-import { defaultEquipment, recipeStats, shoppingList, srmToHex, styleCheck, type HopUse, type Recipe } from "@/lib/recipe-calc";
+import { defaultEquipment, createRecipeVersion, recipeStats, shoppingList, srmToHex, styleCheck, type HopUse, type Recipe, type RecipeVersion } from "@/lib/recipe-calc";
 import { allStyles, fmt, money, profileNumber as pn, readProfiles, uid, useBatches, useInventory, useRecipes } from "@/lib/store";
 
 const emptyRecipe = (): Recipe => {
   const t = new Date().toISOString();
-  return { id: uid(), name: "", styleCode: "18B", author: "", notes: "", equipment: { ...defaultEquipment }, mashSteps: [{ name: "Sacarificação", tempC: 66, minutes: 60 }], fermentationTempC: 19, fermentationDays: 14, fermentables: [], hops: [], yeasts: [], miscs: [], createdAt: t, updatedAt: t };
+  return { id: uid(), name: "", styleCode: "18B", author: "", notes: "", equipment: { ...defaultEquipment }, mashSteps: [{ name: "Sacarificação", tempC: 66, minutes: 60 }], fermentationTempC: 19, fermentationDays: 14, fermentables: [], hops: [], yeasts: [], miscs: [], createdAt: t, updatedAt: t, version: "1.0", versionHistory: [] };
 };
 const numIn = (v: string) => { const n = Number(v.replace(",", ".")); return Number.isFinite(n) ? n : 0; };
 const hopUses: { id: HopUse; label: string }[] = [{ id: "fervura", label: "Fervura" }, { id: "primeiro_mosto", label: "1º mosto" }, { id: "whirlpool", label: "Whirlpool" }, { id: "dryhop", label: "Dry hop" }];
@@ -87,7 +87,13 @@ export default function RecipeFormPage() {
     toast.success(`Lote #${number} criado`);
     navigate(`/batches/${b.id}`);
   };
-  const shopping = shoppingList(r, inventory);
+const saveNewVersion = () => {
+    const note = window.prompt("Descrição da alteração (opcional):") || "";
+    const next = createRecipeVersion({ ...r, updatedAt: new Date().toISOString() }, note);
+    saveRecipes(recipes.some(x => x.id === r.id) ? recipes.map(x => (x.id === r.id ? next : x)) : [...recipes, next]);
+    setR(next);
+    toast.success(`Nova versão ${next.version} criada`);
+  };
 
   const Stat = ({ label, value, k }: { label: string; value: string; k?: keyof NonNullable<typeof check> }) => (
     <div className="rounded-md bg-muted/50 p-3">
@@ -291,6 +297,23 @@ export default function RecipeFormPage() {
             {r.waterProfileId && <Button variant="link" className="px-0" onClick={() => navigate(`/water?profile=${r.waterProfileId}&liters=${fmt(stats.volumes.preBoil, 0)}`)}>Ajustar sais para este perfil →</Button>}
           </CardContent>
         </Card>
+      <Card>
+        <CardHeader><CardTitle className="text-base flex items-center gap-2"><History className="h-4 w-4" /> Versões (atual: {r.version})</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={saveNewVersion}><GitBranch className="h-4 w-4 mr-1" /> Salvar nova versão</Button>
+          </div>
+          {r.versionHistory.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma versão anterior.</p>}
+          <ul className="space-y-1">
+            {r.versionHistory.map(v => (
+              <li key={v.version} className="flex items-center justify-between text-sm border rounded-md px-3 py-2">
+                <span>v{v.version} — {new Date(v.createdAt).toLocaleString()} {v.note && `(${v.note})`}</span>
+                <Button variant="ghost" size="sm" onClick={() => { const restored = restoreRecipeVersion(r, v.version); setR(restored); saveRecipes(recipes.map(x => x.id === r.id ? restored : x)); toast.success(`Restaurada versão ${v.version}`); }}>Restaurar</Button>
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
       </div>
     </div>
   );
