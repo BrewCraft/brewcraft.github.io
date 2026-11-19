@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Copy, Plus, Search, Star, Trash2, List, LayoutGrid, Grid3X3 } from "lucide-react";
+import { Copy, Plus, Search, Star, Trash2, List, LayoutGrid, Grid3X3, Download, FileUp, Upload } from "lucide-react";
+import { parseBeerXml, recipeToBeerXml } from "@/lib/beerxml";
 import { recipeStats, srmToHex } from "@/lib/recipe-calc";
 import { allStyles, fmt, money, uid, useRecipes } from "@/lib/store";
 import CanecaLimpa from "@/components/CanecaLimpa";
@@ -12,6 +13,25 @@ import CanecaLimpa from "@/components/CanecaLimpa";
 export default function RecipesPage() {
   const navigate = useNavigate();
   const [recipes, save] = useRecipes();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const parsed = parseBeerXml(text);
+    if (!parsed) { alert("Arquivo BeerXML inválido"); return; }
+    const newRecipe = { ...parsed, id: uid(), name: parsed.name || file.name.replace(".xml", "") } as any;
+    save([...recipes, newRecipe]);
+    e.target.value = "";
+  };
+  const exportRecipe = (r: any) => {
+    const xml = recipeToBeerXml(r);
+    const blob = new Blob([xml], { type: "application/xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${r.name}.xml`; a.click();
+    URL.revokeObjectURL(url);
+  };
   const [q, setQ] = useState("");
   const [view, setView] = useState<"list" | "large" | "medium">("large");
   const styles = allStyles();
@@ -28,7 +48,11 @@ export default function RecipesPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h1 className="text-3xl font-bold text-foreground">Receitas</h1><p className="text-muted-foreground">{recipes.length} receita(s)</p></div>
+        <div className="flex gap-2">
+        <Button variant="outline" onClick={() => fileRef.current?.click()}><Upload className="h-4 w-4 mr-2" />Importar BeerXML</Button>
         <Button onClick={() => navigate("/recipes/new")} className="bg-gradient-primary text-primary-foreground shadow-brew"><Plus className="h-4 w-4 mr-2" />Nova Receita</Button>
+      </div>
+      <input ref={fileRef} type="file" accept=".xml" className="hidden" onChange={handleImport} />
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="relative w-full max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input className="pl-9" placeholder="Buscar receitas..." value={q} onChange={e => setQ(e.target.value)} /></div>
@@ -46,7 +70,7 @@ export default function RecipesPage() {
           const actions = (
             <div className="flex shrink-0" onClick={e => e.stopPropagation()}>
               <Button variant="ghost" size="icon" aria-label={r.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"} onClick={() => toggleFavorite(r.id)}><Star className={`h-4 w-4 ${r.favorite ? "fill-primary text-primary" : "text-muted-foreground"}`} /></Button>
-              <Button variant="ghost" size="icon" aria-label="Duplicar" onClick={() => duplicate(r.id)}><Copy className="h-4 w-4" /></Button>
+              <Button variant="ghost" size="icon" aria-label="Exportar BeerXML" onClick={() => exportRecipe(r)}><Download className="h-4 w-4" /></Button>
               <Button variant="ghost" size="icon" aria-label="Excluir" onClick={() => remove(r.id)}><Trash2 className="h-4 w-4" /></Button>
             </div>
           );
