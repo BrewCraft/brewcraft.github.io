@@ -266,3 +266,13 @@ export function reportSummary(batches: Batch[]) {
     byMonth: [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month)), hops: top(hopUse), malts: top(maltUse),
   };
 }
+
+export interface FermentationMeasurement {
+  id: string;
+  batchId: string;
+  date: string;
+  sg: number;
+  tempC: number;
+  method: string;
+  notes: string;
+}
