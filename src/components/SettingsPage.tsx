@@ -1,13 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useRef, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Download, Upload, Trash2, Database, CheckCircle2, SlidersHorizontal } from "lucide-react";
 import SettingsPreferences from "@/components/SettingsPreferences";
-import { defaultSettings, normalizeSettings } from "@/lib/settings-model";
-import { readSettings, saveSettings } from "@/lib/settings";
+import { defaultSettings } from "@/lib/settings-model";
+import { saveSettings } from "@/lib/settings";
 import { makeBackup, restoreBackup } from "@/lib/backup";
 
 
@@ -50,107 +47,10 @@ const writeAll = (data: Backup) => {
   }
 };
 
-const PROVIDERS: CloudProvider[] = supportedCloudProviders;
-
 export default function SettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
-  const location = useLocation();
   const [counts, setCounts] = useState(readAll);
   const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [selectedProvider, setSelectedProvider] = useState<CloudProvider>("dropbox");
-  const [cloudConfig, setCloudConfig] = useState<ReturnType<typeof readCloudSyncConfig>>(() => readCloudSyncConfig("dropbox"));
-  const [draftCloudConfig, setDraftCloudConfig] = useState<ReturnType<typeof readCloudSyncConfig>>(() => readCloudSyncConfig("dropbox"));
-  const [cloudSyncMsg, setCloudSyncMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [syncConflict, setSyncConflict] = useState<{ provider?: CloudProvider; [key: string]: unknown } | null>(null);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("brewfather-cloud-conflict");
-      setSyncConflict(raw ? JSON.parse(raw) : null);
-    } catch {
-      setSyncConflict(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!location.hash) return;
-    const target = document.getElementById(location.hash.slice(1));
-    if (target) {
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [location.hash]);
-
-  useEffect(() => {
-    const next = readCloudSyncConfig(selectedProvider);
-    setDraftCloudConfig(next);
-    setCloudConfig(next);
-  }, [selectedProvider]);
-
-  const updateCloudConfig = (patch: Partial<typeof draftCloudConfig>) => {
-    setDraftCloudConfig((prev) => ({ ...prev, ...patch }));
-  };
-
-  const refreshCloudConfig = () => {
-    const next = readCloudSyncConfig(selectedProvider);
-    setCloudConfig(next);
-    setDraftCloudConfig(next);
-  };
-
-  const handleSaveCloudConfig = () => {
-    const next = saveCloudSyncConfig({ ...draftCloudConfig, provider: selectedProvider, enabled: draftCloudConfig.enabled });
-    setCloudConfig(next);
-    setDraftCloudConfig(next);
-
-    if (!next.enabled) {
-      setCloudSyncMsg({ ok: true, text: "Configuração da nuvem salva. A sincronização foi desativada." });
-      return;
-    }
-
-    setCloudSyncMsg({ ok: true, text: `Configuração salva para ${cloudProviderLabels[selectedProvider]}.` });
-  };
-
-  const handleConnectProvider = async (provider: CloudProvider) => {
-    try {
-      const session = await connectProvider(provider);
-      const next = readCloudSyncConfig(provider);
-      setSelectedProvider(provider);
-      setCloudConfig(next);
-      setDraftCloudConfig(next);
-      setCloudSyncMsg({ ok: true, text: `Conectado ao ${cloudProviderLabels[provider]} como ${session.accountName ?? "sua conta"}.` });
-    } catch (error) {
-      setCloudSyncMsg({ ok: false, text: error instanceof Error ? error.message : `Não foi possível conectar ao ${cloudProviderLabels[provider]}.` });
-    }
-  };
-
-  const handleDisconnectProvider = async (provider: CloudProvider) => {
-    try {
-      await disconnectProvider(provider);
-      refreshCloudConfig();
-      setCloudSyncMsg({ ok: true, text: `Conexão com ${cloudProviderLabels[provider]} encerrada.` });
-    } catch (error) {
-      setCloudSyncMsg({ ok: false, text: error instanceof Error ? error.message : `Não foi possível desconectar o ${cloudProviderLabels[provider]}.` });
-    }
-  };
-
-  const handleSyncProvider = async (provider: CloudProvider) => {
-    const next = saveCloudSyncConfig({ ...readCloudSyncConfig(provider), provider, enabled: true });
-    setCloudConfig(next);
-    setDraftCloudConfig(next);
-    setSelectedProvider(provider);
-
-    try {
-      const result = await syncCloudData(provider);
-      try {
-        const raw = localStorage.getItem("brewfather-cloud-conflict");
-        setSyncConflict(raw ? JSON.parse(raw) : null);
-      } catch {
-        setSyncConflict(null);
-      }
-      setCloudSyncMsg({ ok: true, text: `Sincronização com ${cloudProviderLabels[provider]}: ${result.message}` });
-    } catch (error) {
-      setCloudSyncMsg({ ok: false, text: error instanceof Error ? error.message : `Não foi possível sincronizar com ${cloudProviderLabels[provider]}.` });
-    }
-  };
 
   const totalItems = Object.values(counts).reduce((sum, list) => sum + list.length, 0);
 
