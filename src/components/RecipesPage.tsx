@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Copy, Plus, Search, Star, Trash2, List, LayoutGrid, Grid3X3, Download, FileUp, Upload } from "lucide-react";
-import { parseBeerXml, recipeToBeerXml } from "@/lib/beerxml";
+import { toast } from "sonner";
 import { recipeStats, srmToHex } from "@/lib/recipe-calc";
 import { allStyles, fmt, money, uid, useRecipes } from "@/lib/store";
 import CanecaLimpa from "@/components/CanecaLimpa";
@@ -33,9 +33,9 @@ export default function RecipesPage() {
     URL.revokeObjectURL(url);
   };
   const [q, setQ] = useState("");
-  const [view, setView] = useState<"list" | "large" | "medium">("large");
+  const [tab, setTab] = useState<"mine" | "library">("mine");
   const styles = allStyles();
-  const list = [...recipes]
+  const list = (tab === "library" ? libraryRecipes : recipes)
     .filter(r => r.name.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)) || a.name.localeCompare(b.name, "pt-BR") || a.id.localeCompare(b.id));
   const duplicate = (id: string) => { const r = recipes.find(x => x.id === id); if (!r) return; save([...recipes, { ...structuredClone(r), id: uid(), name: `${r.name} (cópia)` }]); };
@@ -47,7 +47,10 @@ export default function RecipesPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h1 className="text-3xl font-bold text-foreground">Receitas</h1><p className="text-muted-foreground">{recipes.length} receita(s)</p></div>
+        <div className="inline-flex items-center gap-1" role="group" aria-label="Abas">
+          <Button size="sm" variant={tab === "mine" ? "default" : "ghost"} onClick={() => setTab("mine")}>Minhas receitas</Button>
+          <Button size="sm" variant={tab === "library" ? "default" : "ghost"} onClick={() => setTab("library")}>Receitas prontas</Button>
+        </div>
         <div className="flex gap-2">
         <Button variant="outline" onClick={() => fileRef.current?.click()}><Upload className="h-4 w-4 mr-2" />Importar BeerXML</Button>
         <Button onClick={() => navigate("/recipes/new")} className="bg-gradient-primary text-primary-foreground shadow-brew"><Plus className="h-4 w-4 mr-2" />Nova Receita</Button>
@@ -71,7 +74,13 @@ export default function RecipesPage() {
             <div className="flex shrink-0" onClick={e => e.stopPropagation()}>
               <Button variant="ghost" size="icon" aria-label={r.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"} onClick={() => toggleFavorite(r.id)}><Star className={`h-4 w-4 ${r.favorite ? "fill-primary text-primary" : "text-muted-foreground"}`} /></Button>
               <Button variant="ghost" size="icon" aria-label="Exportar BeerXML" onClick={() => exportRecipe(r)}><Download className="h-4 w-4" /></Button>
-              <Button variant="ghost" size="icon" aria-label="Excluir" onClick={() => remove(r.id)}><Trash2 className="h-4 w-4" /></Button>
+              {tab === "library" ? (
+                <Button variant="ghost" size="icon" aria-label="Copiar para minhas receitas" onClick={() => { save([...recipes, { ...structuredClone(r), id: uid(), name: r.name }]); toast.success("Receita copiada"); }}><Copy className="h-4 w-4" /></Button>
+              ) : (
+                <>
+                  <Button variant="ghost" size="icon" aria-label="Excluir" onClick={() => remove(r.id)}><Trash2 className="h-4 w-4" /></Button>
+                </>
+              )}
             </div>
           );
           if (view === "list") return (
