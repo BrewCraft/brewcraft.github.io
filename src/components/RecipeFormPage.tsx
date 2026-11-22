@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowLeft, Beaker, GitBranch, History, Plus, Save, ShoppingCart, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { fermentables as catFerm, hops as catHops, yeasts as catYeasts, miscs as catMiscs } from "@/lib/catalog";
-import { defaultEquipment, createRecipeVersion, recipeStats, shoppingList, srmToHex, styleCheck, type HopUse, type Recipe, type RecipeVersion } from "@/lib/recipe-calc";
+import { defaultEquipment, createRecipeVersion, restoreRecipeVersion, recipeStats, shoppingList, srmToHex, styleCheck, type HopUse, type Recipe, type RecipeVersion } from "@/lib/recipe-calc";
 import { allStyles, fmt, money, profileNumber as pn, readProfiles, uid, useBatches, useInventory, useRecipes } from "@/lib/store";
 
 const emptyRecipe = (): Recipe => {
@@ -44,6 +44,7 @@ export default function RecipeFormPage() {
   const existing = recipes.find(r => r.id === id);
   const [r, setR] = useState<Recipe>(() => existing ? structuredClone(existing) : emptyRecipe());
   const [showShopping, setShowShopping] = useState(false);
+  const shopping = shoppingList(r, inventory);
   const styles = useMemo(() => allStyles(), []);
   const style = styles.find(s => s.code === r.styleCode);
   const stats = recipeStats(r);
@@ -298,14 +299,14 @@ const saveNewVersion = () => {
           </CardContent>
         </Card>
       <Card>
-        <CardHeader><CardTitle className="text-base flex items-center gap-2"><History className="h-4 w-4" /> Versões (atual: {r.version})</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base flex items-center gap-2"><History className="h-4 w-4" /> Versões (atual: {r.version || "1.0"})</CardTitle></CardHeader>
         <CardContent className="space-y-2">
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={saveNewVersion}><GitBranch className="h-4 w-4 mr-1" /> Salvar nova versão</Button>
           </div>
-          {r.versionHistory.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma versão anterior.</p>}
+          {(r.versionHistory || []).length === 0 && <p className="text-sm text-muted-foreground">Nenhuma versão anterior.</p>}
           <ul className="space-y-1">
-            {r.versionHistory.map(v => (
+            {(r.versionHistory || []).map(v => (
               <li key={v.version} className="flex items-center justify-between text-sm border rounded-md px-3 py-2">
                 <span>v{v.version} — {new Date(v.createdAt).toLocaleString()} {v.note && `(${v.note})`}</span>
                 <Button variant="ghost" size="sm" onClick={() => { const restored = restoreRecipeVersion(r, v.version); setR(restored); saveRecipes(recipes.map(x => x.id === r.id ? restored : x)); toast.success(`Restaurada versão ${v.version}`); }}>Restaurar</Button>

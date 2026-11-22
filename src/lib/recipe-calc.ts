@@ -24,25 +24,28 @@ export interface Recipe {
   waterProfileId?: string; equipmentProfileId?: string; mashProfileId?: string; fermentationProfileId?: string;
   fermentables: RecipeFermentable[]; hops: RecipeHop[]; yeasts: RecipeYeast[]; miscs: RecipeMisc[];
   favorite?: boolean; createdAt: string; updatedAt: string;
-  version: string;
-  versionHistory: RecipeVersion[];
+  version?: string;
+  versionHistory?: RecipeVersion[];
 }
 
 export const defaultEquipment: Equipment = { batchL: 20, boilMinutes: 60, evaporationLh: 4, trubLossL: 1, fermenterLossL: 1, efficiency: 72 };
 export function createRecipeVersion(recipe: Recipe, note: string = ""): Recipe {
+  const currentVersion = recipe.version || "1.0";
   const { versions: _v, versionHistory, ...snapshot } = recipe as any;
-  const currentVersion: RecipeVersion = {
-    version: recipe.version,
+  const currentVersionEntry: RecipeVersion = {
+    version: currentVersion,
     note,
     createdAt: new Date().toISOString(),
     snapshot: { ...snapshot },
   };
-  const [major, minor] = recipe.version.split(".").map(Number);
-  const newVersion = `${major}.${(minor || 0) + 1}`;
+  const parts = currentVersion.split(".").map(Number);
+  const major = Number.isFinite(parts[0]) ? parts[0] : 1;
+  const minor = Number.isFinite(parts[1]) ? parts[1] : 0;
+  const newVersion = `${major}.${minor + 1}`;
   return {
     ...recipe,
     version: newVersion,
-    versionHistory: [...(recipe.versionHistory || []), currentVersion],
+    versionHistory: [...(recipe.versionHistory || []), currentVersionEntry],
     updatedAt: new Date().toISOString(),
   };
 }

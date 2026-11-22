@@ -2,12 +2,14 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ReactNode } from "react";
+import { useLocation } from "react-router-dom";
 
 interface LayoutProps {
   children: ReactNode;
 }
 
 export default function Layout({ children }: LayoutProps) {
+  const location = useLocation();
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-background text-foreground">
@@ -21,7 +23,7 @@ export default function Layout({ children }: LayoutProps) {
             </div>
           </header>
           <div className="flex-1 p-6">
-            <ErrorBoundary>
+            <ErrorBoundary resetKey={location.pathname}>
               {children}
             </ErrorBoundary>
           </div>

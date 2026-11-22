@@ -9,12 +9,14 @@ import { toast } from "sonner";
 import { recipeStats, srmToHex } from "@/lib/recipe-calc";
 import { parseBeerXml, recipeToBeerXml } from "@/lib/beerxml";
 import { exportRecipePdf } from "@/lib/pdf-export";
+import { libraryRecipes } from "@/lib/recipe-library";
 import { allStyles, fmt, money, uid, useRecipes } from "@/lib/store";
 import CanecaLimpa from "@/components/CanecaLimpa";
 
 export default function RecipesPage() {
   const navigate = useNavigate();
   const [recipes, save] = useRecipes();
+  const [view, setView] = useState<"list" | "large" | "medium">("large");
   const fileRef = useRef<HTMLInputElement>(null);
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
