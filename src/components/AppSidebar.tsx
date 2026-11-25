@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
+import { confirmNavigationIfGuarded } from "@/lib/navigation-guard";
 import { useSettings } from "@/lib/settings";
 import {
   Sidebar,
@@ -187,6 +188,12 @@ export function AppSidebar() {
 
   const profilesActive = location.pathname.startsWith("/profiles");
 
+  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!confirmNavigationIfGuarded()) {
+      e.preventDefault();
+    }
+  };
+
   return (
     <Sidebar className="border-r border-border bg-[#edf3fb] text-slate-800 dark:bg-[#171b20] dark:text-[#eaf1ff]">
       <SidebarContent className="p-3">
@@ -199,6 +206,7 @@ export function AppSidebar() {
                   <SidebarMenuButton asChild>
                     <NavLink
                       to={item.url}
+                      onClick={handleNavClick}
                       className={getNavClassName(item.url)}
                     >
                       <item.icon className="h-4 w-4" />
@@ -220,6 +228,7 @@ export function AppSidebar() {
                   <SidebarMenuButton asChild>
                     <NavLink
                       to={item.url}
+                      onClick={handleNavClick}
                       className={getNavClassName(item.url)}
                     >
                       <item.icon className="h-4 w-4" />
@@ -231,7 +240,7 @@ export function AppSidebar() {
 
               <SidebarMenuItem>
                 <SidebarMenuButton asChild isActive={profilesActive}>
-                  <NavLink to="/profiles/equipamento" className={profilesActive ? "bg-primary text-primary-foreground font-medium shadow-brew" : "hover:bg-muted text-muted-foreground hover:text-foreground"}>
+                  <NavLink to="/profiles/equipamento" onClick={handleNavClick} className={profilesActive ? "bg-primary text-primary-foreground font-medium shadow-brew" : "hover:bg-muted text-muted-foreground hover:text-foreground"}>
                     <Layers className="h-4 w-4" />
                     <span>{t("Perfis", "Profiles")}</span>
                   </NavLink>
@@ -241,7 +250,7 @@ export function AppSidebar() {
                     {profileItems.map((item) => (
                       <SidebarMenuSubItem key={item.title}>
                         <SidebarMenuSubButton asChild isActive={location.pathname === item.url}>
-                          <NavLink to={item.url}>
+                          <NavLink to={item.url} onClick={handleNavClick}>
                             <item.icon className="h-3.5 w-3.5" />
                             <span>{item.title}</span>
                           </NavLink>
@@ -262,6 +271,7 @@ export function AppSidebar() {
                 <SidebarMenuButton asChild>
                   <NavLink
                     to="/settings"
+                    onClick={handleNavClick}
                     className={getNavClassName("/settings")}
                   >
                     <Settings className="h-4 w-4" />
@@ -274,6 +284,7 @@ export function AppSidebar() {
                 <SidebarMenuButton asChild>
                   <NavLink
                     to="/cloud-sync"
+                    onClick={handleNavClick}
                     className={getNavClassName("/cloud-sync")}
                   >
                     <Cloud className="h-4 w-4" />

@@ -6,10 +6,11 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, Pencil, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, FileDown, Pencil, Plus, Trash2, X } from "lucide-react";
 import { fermentables, hops, miscs, yeasts } from "@/lib/catalog";
 import type { InventoryItem, InventoryKind } from "@/lib/recipe-calc";
 import { fmt, money, uid, useInventory } from "@/lib/store";
+import { exportInventoryPdf } from "@/lib/pdf-export";
 
 const kinds: { id: InventoryKind; label: string; unit: string; priceLabel: string }[] = [
   { id: "fermentavel", label: "Fermentáveis", unit: "kg", priceLabel: "R$/kg" },
@@ -44,7 +45,10 @@ export default function InventoryPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h1 className="text-3xl font-bold text-foreground">Inventário</h1><p className="text-muted-foreground">{items.length} itens · valor em estoque {money(total)}</p></div>
-        <Button onClick={() => setForm(blank())} className="bg-gradient-primary text-primary-foreground shadow-brew"><Plus className="h-4 w-4 mr-2" />Adicionar item</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => { try { exportInventoryPdf(items); } catch { alert("Erro ao gerar PDF do inventário"); } }}><FileDown className="h-4 w-4 mr-2" />Exportar PDF</Button>
+          <Button onClick={() => setForm(blank())} className="bg-gradient-primary text-primary-foreground shadow-brew"><Plus className="h-4 w-4 mr-2" />Adicionar item</Button>
+        </div>
       </div>
       {low.length > 0 && (
         <Card className="border-destructive/50"><CardContent className="p-4 flex gap-3 items-start text-sm">

@@ -3,27 +3,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Download, Upload, Trash2, Database, CheckCircle2, SlidersHorizontal } from "lucide-react";
 import SettingsPreferences from "@/components/SettingsPreferences";
-import { defaultSettings } from "@/lib/settings-model";
-import { saveSettings } from "@/lib/settings";
-import { makeBackup, restoreBackup } from "@/lib/backup";
-
-
-const STORAGE_KEYS = {
-  receitas: "brewfather-recipes",
-  lotes: "brewfather-batches",
-  "inventário": "brewfather-inventory",
-  "perfil-equipamento": "brewfather-profiles-equipamento",
-  "perfil-mostura": "brewfather-profiles-mostura",
-  "perfil-fermentacao": "brewfather-profiles-fermentacao",
-  "perfil-agua": "brewfather-profiles-agua",
-  "perfil-estilos": "brewfather-profiles-estilos",
-} as const;
+import { clearData, makeBackup, restoreBackup, storageKeys } from "@/lib/backup";
 
 type Backup = Record<string, unknown[]>;
 
 const readAll = (): Backup => {
   const data: Backup = {};
-  for (const [name, key] of Object.entries(STORAGE_KEYS)) {
+  for (const [name, key] of Object.entries(storageKeys)) {
     try {
       const raw = localStorage.getItem(key);
       data[name] = raw === null ? [] : (JSON.parse(raw) as unknown[]);
@@ -32,19 +18,6 @@ const readAll = (): Backup => {
     }
   }
   return data;
-};
-
-const writeAll = (data: Backup) => {
-  const known = new Set(Object.values(STORAGE_KEYS));
-  for (const [name, value] of Object.entries(data)) {
-    const key = (STORAGE_KEYS as Record<string, string>)[name];
-    if (key && Array.isArray(value)) {
-      localStorage.setItem(key, JSON.stringify(value));
-    }
-  }
-  for (const key of known) {
-    window.dispatchEvent(new CustomEvent("brewfather-store", { detail: key.replace("brewfather-", "") }));
-  }
 };
 
 export default function SettingsPage() {
@@ -80,8 +53,7 @@ export default function SettingsPage() {
 
   const clearAll = () => {
     if (!window.confirm("Apagar TODOS os dados deste navegador (receitas, lotes, inventário, perfis e preferências)? Recomendo exportar um backup antes.")) return;
-    writeAll(Object.fromEntries(Object.keys(STORAGE_KEYS).map((k) => [k, []])));
-    saveSettings(defaultSettings);
+    clearData({ resetSettings: true });
     setCounts(readAll());
     setImportMsg({ ok: true, text: "Todos os dados foram apagados." });
   };
@@ -116,7 +88,7 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-            {Object.keys(STORAGE_KEYS).map((name) => (
+            {Object.keys(storageKeys).map((name) => (
               <div key={name} className="flex items-center justify-between rounded-md border border-border px-3 py-2 bg-background">
                 <dt className="text-muted-foreground">{labels[name]}</dt>
                 <dd className="font-medium text-foreground">{counts[name]?.length ?? 0}</dd>

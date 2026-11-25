@@ -6,14 +6,26 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Check, Pause, Play, RotateCcw, Trash2, PackageMinus } from "lucide-react";
+import { ArrowLeft, Check, CheckCircle2, FileDown, Pause, Pencil, Play, RotateCcw, Trash2, PackageMinus, X } from "lucide-react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
-import { batchAbv, batchStatuses, boilSchedule, deductInventory, recipeStats, type Batch } from "@/lib/recipe-calc";
+import { batchAbv, batchAttenuation, batchStatuses, boilSchedule, checkFermentationStability, deductInventory, recipeStats, updateBatchMeasurement, type Batch, type Measurement } from "@/lib/recipe-calc";
 import { readSettings, useSettings } from "@/lib/settings";
 import { fmt, uid, useBatches, useInventory } from "@/lib/store";
+import { exportBatchPdf } from "@/lib/pdf-export";
 
 const mmss = (s: number) => `${String(Math.floor(Math.max(0, s) / 60)).padStart(2, "0")}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, "0")}`;
+
+function toLocalDateTimeInput(input?: string | Date): string {
+  const d = input ? new Date(input) : new Date();
+  if (Number.isNaN(d.getTime())) {
+    const now = new Date();
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}T${p(now.getHours())}:${p(now.getMinutes())}`;
+  }
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 function useTimer(totalSec: number) {
   const [left, setLeft] = useState(totalSec);
@@ -89,7 +101,8 @@ export default function BatchDetailPage() {
   const [batches, saveBatches] = useBatches();
   const [inventory, saveInventory] = useInventory();
   const b = batches.find(x => x.id === id);
-  const [m, setM] = useState({ date: new Date().toISOString().slice(0, 16), sg: "", tempC: "", note: "" });
+  const [m, setM] = useState({ date: toLocalDateTimeInput(), sg: "", tempC: "", note: "" });
+  const [editingId, setEditingId] = useState<string | null>(null);
   if (!b) return <div className="py-12 text-center"><p className="text-muted-foreground">Lote não encontrado.</p><Link to="/batches" className="text-primary underline">Voltar aos lotes</Link></div>;
 
   const update = (patch: Partial<Batch>) => saveBatches(batches.map(x => (x.id === b.id ? { ...x, ...patch } : x)));
@@ -105,15 +118,41 @@ export default function BatchDetailPage() {
     update({ status: s });
     if (s === "brassagem" && !b.inventoryDeducted && confirm("Descontar os ingredientes do inventário agora?")) deduct();
   };
-  const addMeasurement = () => {
+  const saveMeasurement = () => {
     const sg = Number(m.sg.replace(",", ".")), tempC = Number(m.tempC.replace(",", "."));
     if (!(sg > 0.98 && sg < 1.2)) { toast.error("Informe uma densidade válida (ex: 1.012)."); return; }
-    update({ measurements: [...b.measurements, { id: uid(), date: new Date(m.date).toISOString(), sg, tempC: Number.isFinite(tempC) ? tempC : 0, note: m.note }] });
-    setM({ ...m, sg: "", note: "" });
+    const parsedDate = new Date(m.date);
+    if (Number.isNaN(parsedDate.getTime())) { toast.error("Informe uma data e hora válidas."); return; }
+    const measurementDate = parsedDate.toISOString();
+    const finalTemp = Number.isFinite(tempC) ? tempC : 0;
+    if (editingId) {
+      update(updateBatchMeasurement(b, editingId, { date: measurementDate, sg, tempC: finalTemp, note: m.note }));
+      setEditingId(null);
+      setM({ date: toLocalDateTimeInput(), sg: "", tempC: "", note: "" });
+      toast.success("Medição atualizada com sucesso");
+    } else {
+      update({ measurements: [...b.measurements, { id: uid(), date: measurementDate, sg, tempC: finalTemp, note: m.note }] });
+      setM({ ...m, sg: "", note: "" });
+    }
+  };
+  const startEdit = (x: Measurement) => {
+    setEditingId(x.id);
+    setM({
+      date: toLocalDateTimeInput(x.date),
+      sg: String(x.sg),
+      tempC: String(x.tempC),
+      note: x.note || "",
+    });
+  };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setM({ date: toLocalDateTimeInput(), sg: "", tempC: "", note: "" });
   };
   const sorted = [...b.measurements].sort((a, c) => a.date.localeCompare(c.date));
   const chart = sorted.map(x => ({ data: new Date(x.date).toLocaleDateString(locale, { day: "2-digit", month: "2-digit" }), SG: x.sg, Temp: x.tempC }));
-  const abv = batchAbv(b);
+  const abv = batchAbv(b, settings);
+  const attenuation = batchAttenuation(b, settings);
+  const stability = checkFermentationStability(b.measurements);
   const dryHops = b.recipe.hops.filter(h => h.use === "dryhop");
   const addDays = (d: number) => { const t = new Date(b.brewDate + "T12:00"); t.setDate(t.getDate() + d); return t.toLocaleDateString(locale); };
   const numOrUndef = (v: string) => (v === "" ? undefined : Number(v.replace(",", ".")));
@@ -127,6 +166,7 @@ export default function BatchDetailPage() {
             <Link to={`/recipes/${b.recipeId}`} className="text-sm text-primary underline">Ver receita original</Link></div>
         </div>
         <Button variant="outline" onClick={() => { if (confirm("Excluir este lote?")) { saveBatches(batches.filter(x => x.id !== b.id)); navigate("/batches"); } }}><Trash2 className="h-4 w-4 mr-2" />Excluir</Button>
+        <Button variant="outline" onClick={() => { try { exportBatchPdf(b); } catch { toast.error("Erro ao gerar PDF do lote"); } }}><FileDown className="h-4 w-4 mr-2" />Exportar PDF</Button>
       </div>
 
       <Card className="shadow-card"><CardContent className="p-4">
@@ -149,6 +189,7 @@ export default function BatchDetailPage() {
             <div className="space-y-1"><Label className="text-xs text-muted-foreground">Volume final (L)</Label><Input type="number" step="0.1" value={b.measuredVolumeL ?? ""} onChange={e => update({ measuredVolumeL: numOrUndef(e.target.value) })} /></div>
             <div className="col-span-2 sm:col-span-4 flex flex-wrap gap-4 text-sm">
               <span>ABV: <b>{abv !== undefined ? `${fmt(abv)}%` : "—"}</b></span>
+              <span>Atenuação aparente: <b>{attenuation !== undefined ? `${fmt(attenuation, 1)}%` : "—"}</b></span>
               <span>IBU previsto: <b>{fmt(stats.ibu, 0)}</b></span>
               <span>Fermentação: <b>{b.recipe.fermentationTempC}°C por {b.recipe.fermentationDays} dias</b> (até {addDays(b.recipe.fermentationDays)})</span>
             </div>
@@ -173,12 +214,29 @@ export default function BatchDetailPage() {
       <Card className="shadow-card">
         <CardHeader><CardTitle>Medições de fermentação</CardTitle></CardHeader>
         <CardContent className="space-y-4">
+          {stability.isStable && (
+            <div className="flex items-center gap-3 p-3.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-sm">
+              <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <div>
+                <span className="font-semibold">Densidade estabilizada: </span>
+                <span>{stability.message}</span>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 sm:grid-cols-[1.4fr_1fr_1fr_2fr_auto] gap-2 items-end">
             <div className="space-y-1 col-span-2 sm:col-span-1"><Label className="text-xs text-muted-foreground">Data e hora</Label><Input type="datetime-local" value={m.date} onChange={e => setM({ ...m, date: e.target.value })} /></div>
             <div className="space-y-1"><Label className="text-xs text-muted-foreground">Densidade (SG)</Label><Input type="number" step="0.001" placeholder="1.020" value={m.sg} onChange={e => setM({ ...m, sg: e.target.value })} /></div>
             <div className="space-y-1"><Label className="text-xs text-muted-foreground">Temp. (°C)</Label><Input type="number" step="0.1" value={m.tempC} onChange={e => setM({ ...m, tempC: e.target.value })} /></div>
-            <div className="space-y-1 col-span-2 sm:col-span-1"><Label className="text-xs text-muted-foreground">Nota</Label><Input value={m.note} onChange={e => setM({ ...m, note: e.target.value })} /></div>
-            <Button onClick={addMeasurement} className="col-span-2 sm:col-span-1">Adicionar</Button>
+            <div className="space-y-1 col-span-2 sm:col-span-1"><Label className="text-xs text-muted-foreground">Nota</Label><Input value={m.note} onChange={e => setM({ ...m, note: e.target.value })} placeholder="Ex: medição com refratômetro" /></div>
+            <div className="flex gap-2 col-span-2 sm:col-span-1">
+              <Button onClick={saveMeasurement} className="flex-1">{editingId ? "Salvar" : "Adicionar"}</Button>
+              {editingId && (
+                <Button variant="outline" size="icon" onClick={cancelEdit} title="Cancelar edição">
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
           {chart.length > 0 && (
             <div className="h-64">
@@ -198,8 +256,14 @@ export default function BatchDetailPage() {
           <ul className="divide-y divide-border text-sm">
             {sorted.map(x => (
               <li key={x.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                <span>{new Date(x.date).toLocaleString(locale)}</span><span className="font-mono">{x.sg.toFixed(3)}</span><span>{x.tempC}°C</span><span className="text-muted-foreground flex-1">{x.note}</span>
-                <Button variant="ghost" size="icon" aria-label="Remover medição" onClick={() => update({ measurements: b.measurements.filter(y => y.id !== x.id) })}><Trash2 className="h-4 w-4" /></Button>
+                <span>{new Date(x.date).toLocaleString(locale)}</span><span className="font-mono font-semibold">{x.sg.toFixed(3)}</span><span>{x.tempC}°C</span><span className="text-muted-foreground flex-1">{x.note}</span>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="icon" aria-label="Editar medição" onClick={() => startEdit(x)}><Pencil className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="icon" aria-label="Remover medição" onClick={() => {
+                    if (editingId === x.id) cancelEdit();
+                    update({ measurements: b.measurements.filter(y => y.id !== x.id) });
+                  }}><Trash2 className="h-4 w-4" /></Button>
+                </div>
               </li>
             ))}
           </ul>

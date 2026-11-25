@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { calculators, validateCalculator, type CalculatorDefinition, type Values, type Result } from "@/lib/calculator-registry";
 import { convertUnit, unitFamilies, type UnitFamily } from "@/lib/brewing";
 import { useSettings } from "@/lib/settings";
+import { readCalculatorFavorites, saveCalculatorFavorites } from "@/lib/backup";
 
 const format = (value: number, digits = 2, locale = "pt-BR") => Number(value).toLocaleString(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 function ResultPanel({ results, error, locale }: { results: Result[]; error?: string; locale: string }) {
@@ -49,27 +50,27 @@ function CalculationForm({ calculator, locale }: { calculator: CalculatorDefinit
     {calculator.note && <p className="text-xs text-muted-foreground leading-relaxed border-t border-border pt-4 mt-6">{calculator.note}</p>}
   </>;
 }
-const FAVORITES_KEY = "brewfather-calculator-favorites";
-const readFavorites = () => {
-  if (typeof window === "undefined") return [] as string[];
-  try {
-    const value = JSON.parse(window.localStorage.getItem(FAVORITES_KEY) || "[]");
-    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-  } catch {
-    return [] as string[];
-  }
-};
-
 export default function CalculatorsPage() {
   const [settings] = useSettings();
   const locale = settings.language || "pt-BR";
   const [selected, setSelected] = useState("alcohol");
   const [search, setSearch] = useState("");
-  const [favorites, setFavorites] = useState<string[]>(readFavorites);
+  const [favorites, setFavorites] = useState<string[]>(readCalculatorFavorites);
 
   useEffect(() => {
-    window.localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
-  }, [favorites]);
+    const syncFavorites = () => {
+      const next = readCalculatorFavorites();
+      setFavorites(prev =>
+        prev.length === next.length && prev.every((item, i) => item === next[i]) ? prev : next
+      );
+    };
+    window.addEventListener("brewfather-store", syncFavorites);
+    window.addEventListener("storage", syncFavorites);
+    return () => {
+      window.removeEventListener("brewfather-store", syncFavorites);
+      window.removeEventListener("storage", syncFavorites);
+    };
+  }, []);
 
   const calculator = calculators.find(item => item.id === selected) ?? calculators[0];
   const normalized = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -78,7 +79,9 @@ export default function CalculatorsPage() {
     .sort((a, b) => Number(favorites.includes(b.id)) - Number(favorites.includes(a.id)) || a.title.localeCompare(b.title, "pt-BR") || a.id.localeCompare(b.id));
 
   const toggleFavorite = (id: string) => {
-    setFavorites(current => current.includes(id) ? current.filter(item => item !== id) : [id, ...current]);
+    const current = readCalculatorFavorites();
+    const next = current.includes(id) ? current.filter(item => item !== id) : [id, ...current];
+    setFavorites(saveCalculatorFavorites(next));
   };
 
   return <div className="space-y-6">

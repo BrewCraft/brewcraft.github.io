@@ -1,6 +1,6 @@
 /** Browser-local persistence for recipes, batches and inventory, with cross-component sync. */
 import { useCallback, useEffect, useState } from "react";
-import { defaultEquipment, type Batch, type InventoryItem, type Recipe } from "./recipe-calc";
+import { defaultEquipment, type Batch, type InventoryItem, type Recipe, type RecipeVersion } from "./recipe-calc";
 import { readCloudSyncConfig, syncCloudData } from "./cloud-sync";
 import { getLocale, readSettings } from "./settings";
 
@@ -78,21 +78,46 @@ const seedInventory: InventoryItem[] = [
   { id: "i4", kind: "lupulo", name: "Magnum", amount: 50, unit: "g", price: 0.22, minAmount: 20, alpha: 13 },
   { id: "i5", kind: "levedura", name: "SafAle US-05", amount: 2, unit: "pacote", price: 35, minAmount: 1, attenuation: 81 },
 ];
-const seeds: Record<Key, unknown[]> = { recipes: [seedRecipe], batches: [], inventory: seedInventory };
+type CollectionMap = {
+  recipes: Recipe;
+  batches: Batch;
+  inventory: InventoryItem;
+};
 
-export function read<T>(key: Key): T[] {
+type StoredRecipe = Omit<Recipe, "version" | "versionHistory"> & {
+  version?: string;
+  versionHistory?: RecipeVersion[];
+};
+
+const seeds: { [K in Key]: CollectionMap[K][] } = {
+  recipes: [seedRecipe],
+  batches: [],
+  inventory: seedInventory,
+};
+
+function normalizeStoredRecipe(recipe: StoredRecipe): Recipe {
+  return {
+    ...recipe,
+    version: recipe.version || "1.0",
+    versionHistory: Array.isArray(recipe.versionHistory) ? recipe.versionHistory : [],
+  };
+}
+
+export function read<K extends Key>(key: K): CollectionMap[K][];
+export function read<T>(key: Key): T[];
+export function read(key: Key): CollectionMap[Key][] {
   const raw = localStorage.getItem(KEYS[key]);
-  if (raw === null) return seeds[key] as T[];
+  if (raw === null) return seeds[key];
   try {
-    const parsed = JSON.parse(raw) as T[];
     if (key === "recipes") {
-      return parsed.map((r: any) => ({
-        ...r,
-        version: r.version || "1.0",
-        versionHistory: r.versionHistory || [],
-      })) as T[];
+      const parsed: StoredRecipe[] = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter((recipe) => Boolean(recipe) && typeof recipe === "object" && !Array.isArray(recipe))
+        .map(normalizeStoredRecipe);
     }
-    return parsed;
+    const parsed: Batch[] | InventoryItem[] = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch { return []; }
 }
 export function write<T>(key: Key, value: T[]) {
@@ -101,21 +126,21 @@ export function write<T>(key: Key, value: T[]) {
   void triggerAutoSync();
 }
 
-function useCollection<T>(key: Key) {
-  const [items, setItems] = useState<T[]>(() => read<T>(key));
+function useCollection<K extends Key>(key: K) {
+  const [items, setItems] = useState<CollectionMap[K][]>(() => read(key));
   useEffect(() => {
-    const sync = () => setItems(read<T>(key));
+    const sync = () => setItems(read(key));
     window.addEventListener(EVENT, sync);
     window.addEventListener("storage", sync);
     return () => { window.removeEventListener(EVENT, sync); window.removeEventListener("storage", sync); };
   }, [key]);
-  const save = useCallback((next: T[]) => write(key, next), [key]);
+  const save = useCallback((next: CollectionMap[K][]) => write(key, next), [key]);
   return [items, save] as const;
 }
 
-export const useRecipes = () => useCollection<Recipe>("recipes");
-export const useBatches = () => useCollection<Batch>("batches");
-export const useInventory = () => useCollection<InventoryItem>("inventory");
+export const useRecipes = () => useCollection("recipes");
+export const useBatches = () => useCollection("batches");
+export const useInventory = () => useCollection("inventory");
 
 export interface SavedProfile { id: string; name: string; descricao?: string; values: Record<string, string> }
 export function readProfiles(slug: "equipamento" | "mostura" | "fermentacao" | "agua" | "estilos"): SavedProfile[] {

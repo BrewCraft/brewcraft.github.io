@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, HashRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, HashRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import Layout from "./components/Layout";
 import Dashboard from "./components/Dashboard";
 import RecipesPage from "./components/RecipesPage";
@@ -25,6 +25,11 @@ import { SettingsTheme } from "./lib/settings";
 
 const queryClient = new QueryClient();
 
+function RecipeFormRoute() {
+  const { id } = useParams();
+  return <RecipeFormPage key={id ?? "new"} />;
+}
+
 // Em hospedagens estáticas como GitHub Pages e em arquivos abertos direto do disco,
 // o BrowserRouter pode quebrar por causa de rotas sem fallback do servidor.
 // Usamos HashRouter nesses cenários para manter a navegação estável.
@@ -44,8 +49,8 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/recipes" element={<RecipesPage />} />
-            <Route path="/recipes/new" element={<RecipeFormPage />} />
-            <Route path="/recipes/:id" element={<RecipeFormPage />} />
+            <Route path="/recipes/new" element={<RecipeFormRoute />} />
+            <Route path="/recipes/:id" element={<RecipeFormRoute />} />
             <Route path="/batches" element={<BatchesPage />} />
             <Route path="/batches/:id" element={<BatchDetailPage />} />
             <Route path="/inventory" element={<InventoryPage />} />

@@ -51,7 +51,7 @@ export default function BatchesPage() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {list.map(b => {
           const idx = batchStatuses.findIndex(s => s.id === b.status);
-          const abv = batchAbv(b);
+          const abv = batchAbv(b, settings);
           return (
             <Card key={b.id} className="shadow-card hover:shadow-brew cursor-pointer" onClick={() => navigate(`/batches/${b.id}`)}>
               <CardHeader className="pb-2"><div className="flex justify-between gap-2"><CardTitle className="text-lg">#{b.number} {b.name}</CardTitle><Badge>{batchStatuses[idx].label}</Badge></div>
