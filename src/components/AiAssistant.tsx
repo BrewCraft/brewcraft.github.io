@@ -38,7 +38,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { GeminiService, geminiLimiter, type Message, GEMINI_3_LIVE_MODELS, GEMINI_3_FALLBACK_MODELS, DEFAULT_GEMINI_3_MODEL, supportsImages } from "@/lib/gemini";
 import { useGeminiLive } from "@/hooks/use-gemini-live";
-import { buildCopilotContext, proposeRecipeCreate, proposeRecipeUpdate, proposeInventoryAdd, applyProposal, executeCalculator, extractJsonObject, type Proposal } from "@/lib/ai-copilot";
+import { buildCopilotContext, proposeRecipeCreate, proposeRecipeUpdate, proposeInventoryAdd, applyProposal, executeCalculator, extractJsonObject, shouldAllowCopilotMutation, type Proposal } from "@/lib/ai-copilot";
 import { readSettings, saveSettings, useSettings } from "@/lib/settings";
 import {
   Tooltip,
@@ -54,7 +54,7 @@ import {
   writeStoredAiChats,
   type ChatSession,
 } from "@/lib/cloud-sync";
-import { useInventory, useRecipes, uid } from "@/lib/store";
+import { read, useInventory, useRecipes, uid } from "@/lib/store";
 import { type Recipe, defaultEquipment, recipeStats, type InventoryItem, type HopUse } from "@/lib/recipe-calc";
 import { fmt } from "@/lib/store";
 import geminiLogo from "../../gemini-svg.svg";
@@ -698,6 +698,8 @@ export default function AiAssistant() {
     persistChatHistory(nextMessages, currentChatId);
     setInput("");
     setSelectedImage(null);
+    setPendingProposal(null);
+    setProposalError(null);
     setIsLoading(true);
     setFallbackOccurred(false);
     setActualModelUsed(null);
@@ -726,28 +728,19 @@ export default function AiAssistant() {
 
           next[lastIndex] = {
             ...next[lastIndex],
-            content: (next[lastIndex].content ?? "") + chunkText,
+            content: streamedText,
           };
 
-          persistChatHistory(next, currentChatId);
           return next;
         });
       }
 
       const finalText = streamedText.trim();
       if (!finalText) {
-        setMessages((prev) => {
-          const next = [...prev];
-          const lastIndex = next.length - 1;
-          if (next[lastIndex]?.role === "model") {
-            next[lastIndex] = {
-              ...next[lastIndex],
-              content: "A IA respondeu sem conteúdo. Tente novamente com outra pergunta ou ajuste o contexto da sua mensagem.",
-            };
-          }
-          persistChatHistory(next, currentChatId);
-          return next;
-        });
+        const emptyMsg = "A IA respondeu sem conteúdo. Tente novamente com outra pergunta ou ajuste o contexto da sua mensagem.";
+        const updated = [...messages, userMessage, { role: "model" as const, content: emptyMsg }];
+        setMessages(updated);
+        persistChatHistory(updated, currentChatId);
       } else {
         const action = extractJsonObject(finalText);
         if (action && typeof action.action === "string") {
@@ -761,25 +754,28 @@ export default function AiAssistant() {
             const msg = res.ok
               ? `${actionMsg || "Cálculo executado pelo BrewCraft."}\n\n**${res.calculator} (função real):**\n` + res.results.map(r => `- ${r.label}: ${fmt(r.value, r.digits ?? 2)} ${r.unit || ""}`).join("\n")
               : `${actionMsg || "Falha ao executar cálculo."}\n\nErro: ${(res as { error: string }).error}`;
-            setMessages((prev) => {
-              const next = [...prev];
-              const lastIndex = next.length - 1;
-              if (next[lastIndex]?.role === "model") next[lastIndex] = { ...next[lastIndex], content: msg };
-              persistChatHistory(next, currentChatId);
-              return next;
-            });
+            const updated = [...messages, userMessage, { role: "model" as const, content: msg }];
+            setMessages(updated);
+            persistChatHistory(updated, currentChatId);
+          } else if (!shouldAllowCopilotMutation(currentText, messages, act)) {
+            const plainMessage =
+              typeof action.message === "string" && action.message.trim()
+                ? action.message.trim()
+                : finalText.replace(/```(?:json)?[\s\S]*?```/gi, "").trim() ||
+                  "Posso ajudar com dúvidas ou análises. Se quiser que eu crie ou altere uma receita no aplicativo, peça explicitamente (ex.: \"crie uma receita de IPA de 20L\").";
+            const updated = [...messages, userMessage, { role: "model" as const, content: plainMessage }];
+            setMessages(updated);
+            persistChatHistory(updated, currentChatId);
           } else {
             const result = handleAiActionObject(action);
-            setMessages((prev) => {
-              const next = [...prev];
-              const lastIndex = next.length - 1;
-              if (next[lastIndex]?.role === "model") {
-                next[lastIndex] = { ...next[lastIndex], content: result.displayMessage };
-              }
-              persistChatHistory(next, currentChatId);
-              return next;
-            });
+            const updated = [...messages, userMessage, { role: "model" as const, content: result.displayMessage }];
+            setMessages(updated);
+            persistChatHistory(updated, currentChatId);
           }
+        } else {
+          const updated = [...messages, userMessage, { role: "model" as const, content: streamedText }];
+          setMessages(updated);
+          persistChatHistory(updated, currentChatId);
         }
       }
     } catch (error: unknown) {
@@ -850,6 +846,8 @@ export default function AiAssistant() {
     setMessages(chat.messages);
     setActiveChatId(chat.id);
     setRetryMessage(null);
+    setPendingProposal(null);
+    setProposalError(null);
     setIsHistoryOpen(false);
   };
 
@@ -992,12 +990,16 @@ export default function AiAssistant() {
 
   const approveProposal = () => {
     if (!pendingProposal) return;
-    const result = applyProposal(pendingProposal, { recipes, inventory });
+    const latestRecipes = read("recipes");
+    const latestInventory = read("inventory");
+    const result = applyProposal(pendingProposal, { recipes: latestRecipes, inventory: latestInventory });
     if (!result.ok) {
       const err = result as { error: string };
       toast({ title: "Operação não aplicada", description: err.error, variant: "destructive" });
       const msg: Message = { role: "model", content: `❌ Alteração não aplicada: ${err.error}` };
       const next = [...messages, msg]; setMessages(next); persistChatHistory(next, activeChatId ?? undefined);
+      setPendingProposal(null);
+      setProposalError(err.error);
       return;
     }
     if (pendingProposal.kind === "CREATE_RECIPE" || pendingProposal.kind === "UPDATE_RECIPE") setRecipes(result.recipes);
@@ -1024,6 +1026,8 @@ export default function AiAssistant() {
       if (e.key === "Escape") {
         if (pendingProposal) {
           rejectProposal();
+        } else if (proposalError) {
+          setProposalError(null);
         } else if (showKeyTutorial) {
           setShowKeyTutorial(false);
         }
@@ -1031,7 +1035,7 @@ export default function AiAssistant() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [pendingProposal, showKeyTutorial, rejectProposal]);
+  }, [pendingProposal, proposalError, showKeyTutorial, rejectProposal]);
 
   const applyAiAction = (content: string) => {
     const obj = extractJsonObject(content);
@@ -1103,6 +1107,10 @@ export default function AiAssistant() {
           <Button variant="outline" size="sm" onClick={() => {
             setMessages([]);
             setActiveChatId(null);
+            setPendingProposal(null);
+            setProposalError(null);
+            setRetryMessage(null);
+            setSelectedImage(null);
           }}>
             <PlusCircle className="w-4 h-4 mr-2" />
             Nova Conversa
@@ -1202,7 +1210,7 @@ export default function AiAssistant() {
               </Badge>
             )}
           </div>
-          <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+          <ScrollArea className="flex-1 min-h-0 p-4" ref={scrollRef}>
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center space-y-4 pt-12">
                 <img src={geminiLogo} alt="Assistente IA" className="w-20 h-20 object-contain opacity-20" />
@@ -1288,69 +1296,103 @@ export default function AiAssistant() {
           </ScrollArea>
 
           {(pendingProposal || proposalError) && (
-            <div className="border-t p-4 bg-amber-50/70 dark:bg-amber-950/20 space-y-3 animate-slide-in">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <p className="font-semibold text-sm">Confirmação necessária (nenhuma alteração aplicada automaticamente)</p>
-                {pendingProposal && <Badge variant="outline">{pendingProposal.kind === "CREATE_RECIPE" ? "Criar receita" : pendingProposal.kind === "UPDATE_RECIPE" ? "Editar receita" : "Alterar inventário"}</Badge>}
-              </div>
-              {proposalError && <p className="text-sm text-destructive">{proposalError}</p>}
-              {pendingProposal && (
-                <div className="space-y-3 text-sm">
-                  <div>
-                    <p className="font-medium">Ingredientes/itens afetados</p>
-                    <p className="text-muted-foreground">{pendingProposal.affectedIngredients.length ? pendingProposal.affectedIngredients.join(", ") : "—"}</p>
-                  </div>
-                  {pendingProposal.kind !== "ADD_INVENTORY" && (() => {
-                    const p = pendingProposal;
-                    const rows: [string, string, string][] = [
-                      ["Receita", p.before?.name || "—", p.after.name],
-                      ["OG", p.before ? fmt(p.before.results.og, 3) : "—", fmt(p.after.results.og, 3)],
-                      ["FG", p.before ? fmt(p.before.results.fg, 3) : "—", fmt(p.after.results.fg, 3)],
-                      ["ABV", p.before ? `${fmt(p.before.results.abv)}%` : "—", `${fmt(p.after.results.abv)}%`],
-                      ["IBU", p.before ? fmt(p.before.results.ibu, 1) : "—", fmt(p.after.results.ibu, 1)],
-                      ["EBC/SRM", p.before ? `${fmt(p.before.results.ebc, 1)} / ${fmt(p.before.results.srm, 1)}` : "—", `${fmt(p.after.results.ebc, 1)} / ${fmt(p.after.results.srm, 1)}`],
-                      ["Volume (L)", p.before ? String(p.before.batchSizeL) : "—", String(p.after.batchSizeL)],
-                      ["Eficiência", p.before ? `${p.before.efficiency}%` : "—", `${p.after.efficiency}%`],
-                    ];
-                    return (
-                      <>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-xs border border-border rounded-md">
-                            <thead className="bg-muted/50"><tr><th className="text-left p-2">Métrica</th><th className="text-left p-2">Antes</th><th className="text-left p-2">Depois</th></tr></thead>
-                            <tbody>
-                              {rows.map(([k, a, b]) => (<tr key={k} className="border-t border-border"><td className="p-2 font-medium">{k}</td><td className="p-2">{a}</td><td className="p-2">{b}</td></tr>))}
-                            </tbody>
-                          </table>
-                        </div>
-                        <div className="text-xs text-muted-foreground space-y-1">
-                          <p><b>Fermentáveis:</b> {p.after.fermentables.map((f) => `${f.kg} kg ${f.name}`).join("; ") || "—"}</p>
-                          <p><b>Lúpulos:</b> {p.after.hops.map((h) => `${h.grams} g ${h.name} (${h.use}${h.minutes ? ` ${h.minutes}min` : ""})`).join("; ") || "—"}</p>
-                          <p><b>Leveduras:</b> {p.after.yeasts.map((y) => `${y.packs}x ${y.name}`).join("; ") || "—"}</p>
-                          {p.after.miscs?.length ? <p><b>Outros:</b> {p.after.miscs.map((m) => `${m.amount} ${m.unit} ${m.name}`).join("; ")}</p> : null}
-                        </div>
-                        {p.inventoryCheck?.some((x) => x.missing > 0) && (
-                          <div className="text-xs text-amber-700 dark:text-amber-300"><b>Faltas no estoque (respeitando quantidades disponíveis):</b> {p.inventoryCheck.filter((x) => x.missing > 0).map((x) => `${x.name}: faltam ${fmt(x.missing, 2)} ${x.unit}`).join("; ")}</div>
-                        )}
-                      </>
-                    );
-                  })()}
-                  {pendingProposal.kind === "ADD_INVENTORY" && (
-                    <div className="text-xs space-y-1">
-                      <p><b>Antes:</b> {pendingProposal.before ? `${pendingProposal.before.amount} ${pendingProposal.before.unit} ${pendingProposal.before.name}` : "Item novo"}</p>
-                      <p><b>Depois:</b> {pendingProposal.after.amount} {pendingProposal.after.unit} {pendingProposal.after.name}</p>
-                    </div>
+            <div className="shrink-0 max-h-[55%] flex flex-col border-t bg-amber-50/90 dark:bg-amber-950/30 animate-slide-in">
+              <div className="shrink-0 flex items-center justify-between gap-2 px-4 pt-3 pb-2 border-b border-amber-200/60 dark:border-amber-800/50">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-semibold text-sm">
+                    {pendingProposal
+                      ? "Confirmação necessária (nenhuma alteração aplicada automaticamente)"
+                      : "Não foi possível preparar a ação"}
+                  </p>
+                  {pendingProposal && (
+                    <Badge variant="outline">
+                      {pendingProposal.kind === "CREATE_RECIPE"
+                        ? "Criar receita"
+                        : pendingProposal.kind === "UPDATE_RECIPE"
+                          ? "Editar receita"
+                          : "Alterar inventário"}
+                    </Badge>
                   )}
-                  {pendingProposal.warnings?.length ? <div className="text-xs text-amber-700">Avisos: {pendingProposal.warnings.join("; ")}</div> : null}
-                  <div className="flex gap-2 flex-wrap">
-                    <Button size="sm" onClick={approveProposal}>Aprovar e aplicar</Button>
-                    <Button size="sm" variant="destructive" onClick={rejectProposal}>Rejeitar</Button>
-                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  onClick={() => {
+                    if (pendingProposal) {
+                      rejectProposal();
+                    } else {
+                      setProposalError(null);
+                    }
+                  }}
+                  aria-label="Fechar painel de confirmação"
+                >
+                  <XCircle className="w-4 h-4" />
+                </Button>
+              </div>
+              <div className="overflow-y-auto min-h-0 p-4 space-y-3 text-sm">
+                {proposalError && <p className="text-sm text-destructive">{proposalError}</p>}
+                {pendingProposal && (
+                  <>
+                    <div>
+                      <p className="font-medium">Ingredientes/itens afetados</p>
+                      <p className="text-muted-foreground">{pendingProposal.affectedIngredients.length ? pendingProposal.affectedIngredients.join(", ") : "—"}</p>
+                    </div>
+                    {pendingProposal.kind !== "ADD_INVENTORY" && (() => {
+                      const p = pendingProposal;
+                      const rows: [string, string, string][] = [
+                        ["Receita", p.before?.name || "—", p.after.name],
+                        ["OG", p.before ? fmt(p.before.results.og, 3) : "—", fmt(p.after.results.og, 3)],
+                        ["FG", p.before ? fmt(p.before.results.fg, 3) : "—", fmt(p.after.results.fg, 3)],
+                        ["ABV", p.before ? `${fmt(p.before.results.abv)}%` : "—", `${fmt(p.after.results.abv)}%`],
+                        ["IBU", p.before ? fmt(p.before.results.ibu, 1) : "—", fmt(p.after.results.ibu, 1)],
+                        ["EBC/SRM", p.before ? `${fmt(p.before.results.ebc, 1)} / ${fmt(p.before.results.srm, 1)}` : "—", `${fmt(p.after.results.ebc, 1)} / ${fmt(p.after.results.srm, 1)}`],
+                        ["Volume (L)", p.before ? String(p.before.batchSizeL) : "—", String(p.after.batchSizeL)],
+                        ["Eficiência", p.before ? `${p.before.efficiency}%` : "—", `${p.after.efficiency}%`],
+                      ];
+                      return (
+                        <>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs border border-border rounded-md">
+                              <thead className="bg-muted/50"><tr><th className="text-left p-2">Métrica</th><th className="text-left p-2">Antes</th><th className="text-left p-2">Depois</th></tr></thead>
+                              <tbody>
+                                {rows.map(([k, a, b]) => (<tr key={k} className="border-t border-border"><td className="p-2 font-medium">{k}</td><td className="p-2">{a}</td><td className="p-2">{b}</td></tr>))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div className="text-xs text-muted-foreground space-y-1">
+                            <p><b>Fermentáveis:</b> {p.after.fermentables.map((f) => `${f.kg} kg ${f.name}`).join("; ") || "—"}</p>
+                            <p><b>Lúpulos:</b> {p.after.hops.map((h) => `${h.grams} g ${h.name} (${h.use}${h.minutes ? ` ${h.minutes}min` : ""})`).join("; ") || "—"}</p>
+                            <p><b>Leveduras:</b> {p.after.yeasts.map((y) => `${y.packs}x ${y.name}`).join("; ") || "—"}</p>
+                            {p.after.miscs?.length ? <p><b>Outros:</b> {p.after.miscs.map((m) => `${m.amount} ${m.unit} ${m.name}`).join("; ")}</p> : null}
+                          </div>
+                          {p.inventoryCheck?.some((x) => x.missing > 0) && (
+                            <div className="text-xs text-amber-700 dark:text-amber-300"><b>Faltas no estoque (respeitando quantidades disponíveis):</b> {p.inventoryCheck.filter((x) => x.missing > 0).map((x) => `${x.name}: faltam ${fmt(x.missing, 2)} ${x.unit}`).join("; ")}</div>
+                          )}
+                        </>
+                      );
+                    })()}
+                    {pendingProposal.kind === "ADD_INVENTORY" && (
+                      <div className="text-xs space-y-1">
+                        <p><b>Antes:</b> {pendingProposal.before ? `${pendingProposal.before.amount} ${pendingProposal.before.unit} ${pendingProposal.before.name}` : "Item novo"}</p>
+                        <p><b>Depois:</b> {pendingProposal.after.amount} {pendingProposal.after.unit} {pendingProposal.after.name}</p>
+                      </div>
+                    )}
+                    {pendingProposal.warnings?.length ? <div className="text-xs text-amber-700">Avisos: {pendingProposal.warnings.join("; ")}</div> : null}
+                  </>
+                )}
+              </div>
+              {pendingProposal && (
+                <div className="shrink-0 flex gap-2 flex-wrap px-4 py-3 border-t border-amber-200/60 dark:border-amber-800/50 bg-amber-50/95 dark:bg-amber-950/40">
+                  <Button type="button" size="sm" onClick={approveProposal}>Aprovar e aplicar</Button>
+                  <Button type="button" size="sm" variant="destructive" onClick={rejectProposal}>Rejeitar</Button>
                 </div>
               )}
             </div>
           )}
 
-          <form onSubmit={handleSend} className="p-4 bg-white dark:bg-slate-800 border-t">
+          <form onSubmit={handleSend} className="shrink-0 p-4 bg-white dark:bg-slate-800 border-t">
             {selectedImage && (
               <div className="relative inline-block mb-2">
                 <img src={selectedImage} alt="Preview" className="h-20 w-20 object-cover rounded-md border" />

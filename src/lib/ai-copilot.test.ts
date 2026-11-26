@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { strict as assert } from "node:assert";
 import { describe, test } from "node:test";
-import { buildCopilotContext, queryRecipesByAbv, executeCalculator, proposeRecipeCreate, proposeRecipeUpdate, proposeInventoryAdd, applyProposal, extractJsonObject } from "./ai-copilot";
+import { buildCopilotContext, queryRecipesByAbv, executeCalculator, proposeRecipeCreate, proposeRecipeUpdate, proposeInventoryAdd, applyProposal, extractJsonObject, shouldAllowCopilotMutation } from "./ai-copilot";
 import { defaultEquipment, type InventoryItem, type Recipe } from "./recipe-calc";
 import { defaultSettings } from "./settings-model";
 
@@ -115,5 +115,51 @@ describe("erros de execução e respostas incompletas", () => {
   test("extrai JSON de resposta incompleta/fenced", () => {
     assert.equal(extractJsonObject('texto ```json {"a":1} ``` fim')?.a, 1);
     assert.equal(extractJsonObject('não é json'), null);
+  });
+});
+
+describe("guarda de intenção para mutações do copiloto", () => {
+  test("bloqueia criação de receita não solicitada em conversas e perguntas comuns", () => {
+    assert.equal(shouldAllowCopilotMutation("oi, tudo bem?", [], "PROPOSE_CREATE_RECIPE"), false);
+    assert.equal(shouldAllowCopilotMutation("como fazer uma IPA bem aromática?", [], "PROPOSE_CREATE_RECIPE"), false);
+    assert.equal(shouldAllowCopilotMutation("qual a diferença entre IPA e APA?", [], "CREATE_RECIPE"), false);
+    assert.equal(shouldAllowCopilotMutation("analise minha receita de Pilsen", [], "PROPOSE_CREATE_RECIPE"), false);
+    assert.equal(shouldAllowCopilotMutation("não crie receita, só me dê dicas", [], "PROPOSE_CREATE_RECIPE"), false);
+  });
+
+  test("permite proposta quando usuário pede explicitamente ou responde à coleta de dados", () => {
+    assert.equal(shouldAllowCopilotMutation("crie uma receita de American IPA de 20L", [], "PROPOSE_CREATE_RECIPE"), true);
+    assert.equal(shouldAllowCopilotMutation("monte uma receita de Weiss para mim", [], "CREATE_RECIPE"), true);
+    assert.equal(shouldAllowCopilotMutation("atualize a receita IPA Teste com 50g de Cascade", [], "PROPOSE_UPDATE_RECIPE"), true);
+    assert.equal(shouldAllowCopilotMutation("adicione 5 kg de malte Pilsen no inventário", [], "PROPOSE_ADD_INVENTORY"), true);
+    assert.equal(
+      shouldAllowCopilotMutation(
+        "20 litros, eficiência 75% e malte Pale Ale",
+        [{ role: "model", content: "Não foi possível preparar a proposta. Faltam: volume do lote (L)." }],
+        "PROPOSE_CREATE_RECIPE"
+      ),
+      true
+    );
+  });
+
+  test("proposeRecipeCreate gera ID único mesmo se payload trouxer id existente", () => {
+    const existing = recipe({ id: "r1" });
+    const p = proposeRecipeCreate(
+      {
+        id: "r1",
+        name: "Nova IPA",
+        style: "21A",
+        equipment: { batchL: 20, boilMinutes: 60, efficiency: 75 },
+        fermentables: [{ name: "Pale Ale", kg: 5, potential: 1.037, color: 3, type: "grao" }],
+      },
+      { inventory: inv() }
+    );
+    assert.equal(p.ok, true);
+    if (p.ok) {
+      assert.notEqual(p.proposal.recipe.id, "r1");
+      const applied = applyProposal(p.proposal, { recipes: [existing], inventory: inv() });
+      assert.equal(applied.ok, true);
+      if (applied.ok) assert.equal(applied.recipes.length, 2);
+    }
   });
 });

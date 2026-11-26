@@ -286,7 +286,7 @@ function normalizeRecipePayload(payload: Record<string, unknown>, existing: Reci
     : (existing?.mashSteps ?? [{ name: "Sacarificação", tempC: 66, minutes: 60 }]);
 
   const recipe: Recipe = {
-    id: String(payload.id ?? existing?.id ?? uid()),
+    id: existing ? existing.id : uid(),
     name: name || "Nova Receita IA",
     styleCode: styleCode || existing?.styleCode || "Sem Estilo",
     author: String(payload.author ?? existing?.author ?? "IA Assistant"),
@@ -409,4 +409,76 @@ export function extractJsonObject(text: string): Record<string, unknown> | null 
     try { const parsed = JSON.parse(c) as unknown; return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null; } catch { /* try next */ }
   }
   return null;
+}
+
+const normalizeIntentText = (text: string) =>
+  text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+export function shouldAllowCopilotMutation(
+  userText: string,
+  previousMessages: Array<{ role: string; content: string }>,
+  actionKind: string,
+): boolean {
+  const kind = actionKind.toUpperCase();
+  const isCreate = kind === "PROPOSE_CREATE_RECIPE" || kind === "CREATE_RECIPE";
+  const isUpdate = kind === "PROPOSE_UPDATE_RECIPE" || kind === "UPDATE_RECIPE";
+  const isInventory = kind === "PROPOSE_ADD_INVENTORY" || kind === "ADD_INVENTORY";
+  if (!isCreate && !isUpdate && !isInventory) return true;
+
+  const text = normalizeIntentText(userText);
+  if (!text) return false;
+
+  // Negação explícita de ação (ex.: "não crie receita", "sem salvar")
+  if (/\b(nao|não|sem)\s+(crie|criar|cria|salve|salvar|salva|gere|gerar|monte|montar|adicione|adicionar|altere|alterar|edite|editar)\b/.test(text)) {
+    return false;
+  }
+
+  // Cancelamento em follow-up
+  if (/^(cancelar|cancela|nao|deixa|esqueca|esquece|abortar)$/.test(text)) {
+    return false;
+  }
+
+  // Perguntas conceituais ("como fazer", "como criar", "o que posso fazer") não são comandos de mutação
+  const isConceptualQuestion = /^(como|por que|porque|qual|quais|o que|onde|quando)\s+(fazer|criar|montar|editar|calcular|posso fazer|devo fazer)\b/.test(text);
+  if (isConceptualQuestion && !/\b(no app|no brewcraft|para mim|pra mim|e salve|salva)\b/.test(text)) {
+    return false;
+  }
+
+  if (isCreate) {
+    if (/\b(crie|criar|cria|gere|gerar|gera|monte|montar|monta|elabore|elaborar|cadastre|cadastrar|cadastra|salve|salvar|salva|create|generate|build|save)\b/.test(text)) {
+      return true;
+    }
+    if (/\b(faca|fazer|faz)\s+(uma|um|essa|esta|a)\s+(receita|cerveja)\b/.test(text)) {
+      return true;
+    }
+  }
+
+  if (isUpdate) {
+    if (/\b(altere|alterar|altera|edite|editar|edita|atualize|atualizar|atualiza|modifique|modificar|mude|mudar|ajuste|ajustar|corrija|corrigir|substitua|substituir|adicione|adicionar|remova|remover|update|edit|modify|change|adjust)\b/.test(text)) {
+      return true;
+    }
+  }
+
+  if (isInventory) {
+    if (/\b(adicione|adicionar|adiciona|cadastre|cadastrar|cadastra|registre|registrar|coloque|colocar|insira|inserir|comprei|some|somar|add|register)\b/.test(text)) {
+      return true;
+    }
+  }
+
+  // Continuação de coleta de dados após proposta incompleta na última resposta do assistente
+  const lastModel = [...previousMessages].reverse().find((m) => m.role === "model");
+  if (
+    lastModel &&
+    (lastModel.content.includes("Não foi possível preparar") ||
+      lastModel.content.includes("Responda com as informações necessárias") ||
+      lastModel.content.includes("Faltam:"))
+  ) {
+    return true;
+  }
+
+  return false;
 }

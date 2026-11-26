@@ -7,11 +7,6 @@ import {
   Settings,
   Beaker,
   Layers,
-  FlaskConical,
-  Thermometer,
-  Droplets,
-  Wrench,
-  CookingPot,
   BookOpen,
   Clock3,
   Sparkles,
@@ -31,9 +26,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 
 type OfflineReleaseInfo = {
@@ -63,14 +55,6 @@ const toolsItems = [
   { title: "Calculadoras", url: "/calculators", icon: Calculator },
   { title: "Estilos", url: "/profiles/estilos", icon: BookOpen },
   { title: "Relatórios", url: "/reports", icon: BarChart3 },
-];
-
-const profileItems = [
-  { title: "Equipamento", url: "/profiles/equipamento", icon: Wrench },
-  { title: "Mostura", url: "/profiles/mostura", icon: CookingPot },
-  { title: "Fermentação", url: "/profiles/fermentacao", icon: Thermometer },
-  { title: "Água", url: "/profiles/agua", icon: Droplets },
-  { title: "Estilos Personalizados", url: "/profiles/estilos", icon: BookOpen },
 ];
 
 export function AppSidebar() {
@@ -171,14 +155,6 @@ export function AppSidebar() {
     { title: t("Relatórios", "Reports"), url: "/reports", icon: BarChart3 },
   ];
 
-  const profileItems = [
-    { title: t("Equipamento", "Equipment"), url: "/profiles/equipamento", icon: Wrench },
-    { title: t("Mostura", "Mash"), url: "/profiles/mostura", icon: CookingPot },
-    { title: t("Fermentação", "Fermentation"), url: "/profiles/fermentacao", icon: Thermometer },
-    { title: t("Água", "Water"), url: "/profiles/agua", icon: Droplets },
-    { title: t("Estilos Personalizados", "Custom Styles"), url: "/profiles/estilos", icon: BookOpen },
-  ];
-
   const getNavClassName = (path: string) => {
     const isActive = location.pathname === path;
     return isActive
@@ -245,20 +221,6 @@ export function AppSidebar() {
                     <span>{t("Perfis", "Profiles")}</span>
                   </NavLink>
                 </SidebarMenuButton>
-                {profilesActive && (
-                  <SidebarMenuSub>
-                    {profileItems.map((item) => (
-                      <SidebarMenuSubItem key={item.title}>
-                        <SidebarMenuSubButton asChild isActive={location.pathname === item.url}>
-                          <NavLink to={item.url} onClick={handleNavClick}>
-                            <item.icon className="h-3.5 w-3.5" />
-                            <span>{item.title}</span>
-                          </NavLink>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    ))}
-                  </SidebarMenuSub>
-                )}
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
