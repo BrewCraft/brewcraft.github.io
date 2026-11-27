@@ -1,9 +1,9 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Beaker, FileText, Package, TrendingUp, Calculator, Droplets, Clock3 } from "lucide-react";
-import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Beaker, FileText, Package, TrendingUp, Calculator, Droplets, Clock3, ChevronDown, ChevronRight } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { batchStatuses, reportSummary } from "@/lib/recipe-calc";
 import { fmt, useBatches, useInventory, useRecipes } from "@/lib/store";
 
@@ -15,12 +15,6 @@ export default function Dashboard() {
   const active = batches.filter(b => b.status !== "concluido" && b.status !== "planejamento");
   const low = inventory.filter(i => i.amount <= i.minAmount);
   const rep = reportSummary(batches);
-  const stats = [
-    { title: "Receitas", value: String(recipes.length), icon: FileText, change: "no seu caderno", to: "/recipes" },
-    { title: "Lotes em andamento", value: String(active.length), icon: Beaker, change: `${batches.length} lotes no total`, to: "/batches" },
-    { title: "Itens em estoque", value: String(inventory.length), icon: Package, change: `${low.length} com estoque baixo`, to: "/inventory" },
-    { title: "Litros produzidos", value: `${fmt(rep.liters, 0)} L`, icon: TrendingUp, change: "lotes já brassados", to: "/reports" },
-  ];
   const [openThemes, setOpenThemes] = useState<Record<string, boolean>>({});
   const toggle = (t: string) => setOpenThemes(p => ({ ...p, [t]: !p[t] }));
   const capabilities = [
@@ -32,6 +26,13 @@ export default function Dashboard() {
     { theme: "IA (BrewCraft AI)", items: ["Contexto sob demanda", "Propostas de criação/edição com confirmação", "Análise técnica e sensorial (parcial)", "Integração com calculadoras reais"] },
     { theme: "Backup/Sync", items: ["Exportação/importação de backup", "Sincronização entre abas", "Persistência local"] },
   ];
+  const stats = [
+    { title: "Receitas", value: String(recipes.length), icon: FileText, change: "no seu caderno", to: "/recipes" },
+    { title: "Lotes em andamento", value: String(active.length), icon: Beaker, change: `${batches.length} lotes no total`, to: "/batches" },
+    { title: "Itens em estoque", value: String(inventory.length), icon: Package, change: `${low.length} com estoque baixo`, to: "/inventory" },
+    { title: "Litros produzidos", value: `${fmt(rep.liters, 0)} L`, icon: TrendingUp, change: "lotes já brassados", to: "/reports" },
+  ];
+  const recent = [...batches].sort((a, b) => b.number - a.number).slice(0, 5);
 
   return (
     <div className="space-y-6">
@@ -86,3 +87,5 @@ export default function Dashboard() {
         </CardContent>
       </Card>
     </div>
+  );
+}
