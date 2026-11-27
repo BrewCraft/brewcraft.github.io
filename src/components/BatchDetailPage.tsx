@@ -12,7 +12,10 @@ import { toast } from "sonner";
 import { batchAbv, batchAttenuation, batchStatuses, boilSchedule, checkFermentationStability, deductInventory, recipeStats, updateBatchMeasurement, type Batch, type Measurement } from "@/lib/recipe-calc";
 import { readSettings, useSettings } from "@/lib/settings";
 import { fmt, uid, useBatches, useInventory } from "@/lib/store";
-import { exportBatchPdf } from "@/lib/pdf-export";
+import { checkAlerts, dedupeAlerts, type AlertConfig, type AlertEvent } from "@/lib/fermentation-monitor";
+import { readAlertConfigs, saveAlertConfigs, readAlertHistory, saveAlertHistory } from "@/lib/device-persistence";
+import { remainingMs, startTimer, pauseTimer, resumeTimer, cancelTimer, completeTimer, type SyncedTimer } from "@/lib/timer-sync";
+import { upsertTimer, readTimers } from "@/lib/device-persistence";
 
 const mmss = (s: number) => `${String(Math.floor(Math.max(0, s) / 60)).padStart(2, "0")}:${String(Math.floor(Math.max(0, s) % 60)).padStart(2, "0")}`;
 
@@ -27,16 +30,68 @@ function toLocalDateTimeInput(input?: string | Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function useTimer(totalSec: number) {
-  const [left, setLeft] = useState(totalSec);
-  const [running, setRunning] = useState(false);
-  useEffect(() => { setLeft(totalSec); setRunning(false); }, [totalSec]);
+function useTimer(timerId: string, totalSec: number) {
+  const [timer, setTimer] = useState<SyncedTimer>(() => {
+    const existing = readTimers().find(t => t.id === timerId);
+    if (existing) return existing;
+    const now = new Date().toISOString();
+    return { id: timerId, name: timerId, durationMs: totalSec * 1000, startedAt: null, pausedAt: null, accumulatedMs: 0, status: "idle", completedAt: null, updatedAt: now };
+  });
+  const [left, setLeft] = useState(() => Math.ceil(remainingMs(timer) / 1000));
+
+  // Sync duration if changed
   useEffect(() => {
-    if (!running) return;
-    const t = setInterval(() => setLeft(l => (l <= 1 ? (setRunning(false), 0) : l - 1)), 1000);
+    setTimer(prev => {
+      if (prev.durationMs === totalSec * 1000) return prev;
+      const next = { ...prev, durationMs: totalSec * 1000, updatedAt: new Date().toISOString() };
+      upsertTimer(next);
+      return next;
+    });
+  }, [totalSec]);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setLeft(Math.ceil(remainingMs(timer) / 1000));
+      if (timer.status === "running" && remainingMs(timer) <= 0) {
+        const completed = completeTimer(timer);
+        setTimer(completed);
+        upsertTimer(completed);
+      }
+    }, 1000);
     return () => clearInterval(t);
-  }, [running]);
-  return { left, running, toggle: () => setRunning(r => !r), reset: () => { setRunning(false); setLeft(totalSec); } };
+  }, [timer]);
+
+  // Cross-tab sync
+  useEffect(() => {
+    const handler = () => {
+      const updated = readTimers().find(t => t.id === timerId);
+      if (updated) setTimer(updated);
+    };
+    window.addEventListener("storage", handler);
+    const bc = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("brewcraft-timers") : null;
+    if (bc) bc.onmessage = (e) => { if (e.data?.id === timerId) setTimer(e.data); };
+    return () => { window.removeEventListener("storage", handler); bc?.close(); };
+  }, [timerId]);
+
+  const toggle = () => {
+    const now = new Date();
+    let next: SyncedTimer;
+    if (timer.status === "running") next = pauseTimer(timer, now);
+    else if (timer.status === "paused") next = resumeTimer(timer, now);
+    else next = startTimer(timer, now);
+    setTimer(next);
+    upsertTimer(next);
+    if (typeof BroadcastChannel !== "undefined") new BroadcastChannel("brewcraft-timers").postMessage(next);
+  };
+  const reset = () => {
+    const now = new Date().toISOString();
+    const next: SyncedTimer = { id: timerId, name: timerId, durationMs: totalSec * 1000, startedAt: null, pausedAt: null, accumulatedMs: 0, status: "idle", completedAt: null, updatedAt: now };
+    setTimer(next);
+    upsertTimer(next);
+    if (typeof BroadcastChannel !== "undefined") new BroadcastChannel("brewcraft-timers").postMessage(next);
+  };
+
+  return { left, running: timer.status === "running", toggle, reset, timer };
 }
 
 function TimerControls({ t }: { t: ReturnType<typeof useTimer> }) {
@@ -52,8 +107,8 @@ function BrewDay({ b }: { b: Batch }) {
   const r = b.recipe;
   const [step, setStep] = useState(0);
   const mash = r.mashSteps[step];
-  const mashT = useTimer((mash?.minutes ?? 0) * 60);
-  const boilT = useTimer(r.equipment.boilMinutes * 60);
+const mashT = useTimer(`${b.id}-mash-${step}`, (mash?.minutes ?? 0) * 60);
+const boilT = useTimer(`${b.id}-boil`, r.equipment.boilMinutes * 60);
   const events = boilSchedule(r);
   const announced = useRef(new Set<number>());
   const boilMinLeft = boilT.left / 60;
@@ -102,7 +157,13 @@ export default function BatchDetailPage() {
   const [inventory, saveInventory] = useInventory();
   const b = batches.find(x => x.id === id);
   const [m, setM] = useState({ date: toLocalDateTimeInput(), sg: "", tempC: "", note: "" });
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [alertCfg, setAlertCfg] = useState<AlertConfig>(() => readAlertConfigs().find(c => c.batchId === b.id) ?? { batchId: b.id, minIntervalMinutes: 30, enabled: true });
+const [alertHistory, setAlertHistory] = useState<AlertEvent[]>(() => readAlertHistory().filter(e => e.batchId === b.id));
+const saveAlertCfg = (cfg: AlertConfig) => {
+  const all = readAlertConfigs().filter(c => c.batchId !== b.id);
+  saveAlertConfigs([...all, cfg]);
+  setAlertCfg(cfg);
+};
   if (!b) return <div className="py-12 text-center"><p className="text-muted-foreground">Lote não encontrado.</p><Link to="/batches" className="text-primary underline">Voltar aos lotes</Link></div>;
 
   const update = (patch: Partial<Batch>) => saveBatches(batches.map(x => (x.id === b.id ? { ...x, ...patch } : x)));
@@ -120,7 +181,8 @@ export default function BatchDetailPage() {
   };
   const saveMeasurement = () => {
     const sg = Number(m.sg.replace(",", ".")), tempC = Number(m.tempC.replace(",", "."));
-    if (!(sg > 0.98 && sg < 1.2)) { toast.error("Informe uma densidade válida (ex: 1.012)."); return; }
+    const v = validateReading({ gravity: sg > 0 ? sg : undefined, temperatureC: Number.isFinite(tempC) ? tempC : undefined });
+    if (!v.valid) { toast.error(v.reason ?? "Medição inválida."); return; }
     const parsedDate = new Date(m.date);
     if (Number.isNaN(parsedDate.getTime())) { toast.error("Informe uma data e hora válidas."); return; }
     const measurementDate = parsedDate.toISOString();
@@ -131,8 +193,20 @@ export default function BatchDetailPage() {
       setM({ date: toLocalDateTimeInput(), sg: "", tempC: "", note: "" });
       toast.success("Medição atualizada com sucesso");
     } else {
-      update({ measurements: [...b.measurements, { id: uid(), date: measurementDate, sg, tempC: finalTemp, note: m.note }] });
-      setM({ ...m, sg: "", note: "" });
+    const measurement: Measurement = { id: uid(), date: measurementDate, sg, tempC: finalTemp, note: m.note };
+    const newMeasurements = [...b.measurements, measurement];
+    update({ measurements: newMeasurements });
+    setM({ ...m, sg: "", note: "" });
+
+    // Evaluate alerts
+    const deviceReading = { id: measurement.id, deviceId: "manual", deviceKind: "manual" as const, batchId: b.id, timestamp: measurementDate, gravity: sg, temperatureC: finalTemp, source: "manual" as const, valid: true };
+    const events = checkAlerts(alertCfg, deviceReading, newMeasurements.map(mm => ({ id: mm.id, deviceId: "manual", deviceKind: "manual" as const, batchId: b.id, timestamp: mm.date, gravity: mm.sg, temperatureC: mm.tempC, source: "manual" as const, valid: true })), new Date());
+    const accepted = dedupeAlerts(readAlertHistory(), events, alertCfg.minIntervalMinutes);
+    if (accepted.length > 0) {
+      saveAlertHistory([...accepted, ...readAlertHistory()]);
+      setAlertHistory(prev => [...accepted, ...prev]);
+      accepted.forEach(e => toast.warning(e.message));
+    }
     }
   };
   const startEdit = (x: Measurement) => {

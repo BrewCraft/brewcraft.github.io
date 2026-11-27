@@ -6,6 +6,7 @@ export const storageKeys: Record<string, string> = {
   receitas: "brewfather-recipes", lotes: "brewfather-batches", inventário: "brewfather-inventory",
   "perfil-equipamento": "brewfather-profiles-equipamento", "perfil-mostura": "brewfather-profiles-mostura",
   "perfil-fermentacao": "brewfather-profiles-fermentacao", "perfil-agua": "brewfather-profiles-agua", "perfil-estilos": "brewfather-profiles-estilos",
+  "alertas-config": "brewfather-alert-configs", "alertas-historico": "brewfather-alert-history", "temporizadores": "brewfather-timers",
 };
 
 export const CALCULATOR_FAVORITES_KEY = "brewfather-calculator-favorites";

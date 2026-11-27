@@ -11,6 +11,7 @@ import {
 import { toast } from "sonner";
 import { cloneRecipeForUser, recipeStats, srmToHex, defaultEquipment, type Recipe } from "@/lib/recipe-calc";
 import { parseBeerXmlAll, recipeToBeerXml } from "@/lib/beerxml";
+import { parseBeerJsonAll } from "@/lib/beerjson";
 import { exportRecipePdf } from "@/lib/pdf-export";
 import { libraryRecipes, libraryCategories, type LibraryCategory, type LibraryRecipe } from "@/lib/recipe-library";
 import { allStyles, fmt, money, uid, useRecipes } from "@/lib/store";
@@ -158,6 +159,7 @@ export default function RecipesPage() {
   const [styleFilter, setStyleFilter] = useState("");
   const [previewRecipe, setPreviewRecipe] = useState<LibraryRecipe | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+    const jsonRef = useRef<HTMLInputElement>(null);
 
   const styles = allStyles();
 
@@ -196,6 +198,44 @@ export default function RecipesPage() {
     toast.success(imported.length === 1
       ? `Receita "${imported[0].name}" importada com sucesso`
       : `${imported.length} receitas importadas com sucesso`
+    );
+  };
+
+  // Importar BeerJSON
+  const handleImportJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const parsedList = parseBeerJsonAll(text);
+    e.target.value = "";
+    if (parsedList.length === 0) {
+      toast.error("Arquivo BeerJSON inválido ou corrompido");
+      return;
+    }
+    const baseName = file.name.replace(/\.json$/i, "");
+    const imported: Recipe[] = parsedList.map((parsed, idx) => ({
+      id: uid(),
+      name: parsed.name || (parsedList.length > 1 ? `${baseName} #${idx + 1}` : baseName),
+      styleCode: parsed.styleCode || "",
+      author: parsed.author || "",
+      notes: parsed.notes || "",
+      equipment: parsed.equipment || { ...defaultEquipment },
+      mashSteps: parsed.mashSteps && parsed.mashSteps.length > 0 ? parsed.mashSteps : [{ name: "Sacarificação", tempC: 66, minutes: 60 }],
+      fermentationTempC: parsed.fermentationTempC ?? 19,
+      fermentationDays: parsed.fermentationDays ?? 14,
+      fermentables: parsed.fermentables || [],
+      hops: parsed.hops || [],
+      yeasts: parsed.yeasts || [],
+      miscs: parsed.miscs || [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      version: "1.0",
+      versionHistory: [],
+    }));
+    save([...recipes, ...imported]);
+    toast.success(imported.length === 1
+      ? `Receita "${imported[0].name}" importada (BeerJSON) com sucesso`
+      : `${imported.length} receitas importadas (BeerJSON) com sucesso`
     );
   };
 
@@ -282,11 +322,15 @@ export default function RecipesPage() {
           <Button variant="outline" onClick={() => fileRef.current?.click()}>
             <Upload className="h-4 w-4 mr-2" />Importar BeerXML
           </Button>
+          <Button variant="outline" onClick={() => jsonRef.current?.click()}>
+            <Upload className="h-4 w-4 mr-2" />Importar BeerJSON
+          </Button>
           <Button onClick={() => navigate("/recipes/new")} className="bg-gradient-primary text-primary-foreground shadow-brew">
             <Plus className="h-4 w-4 mr-2" />Nova Receita
           </Button>
         </div>
         <input ref={fileRef} type="file" accept=".xml" className="hidden" onChange={handleImport} />
+        <input ref={jsonRef} type="file" accept=".json" className="hidden" onChange={handleImportJson} />
       </div>
 
       {/* Barra de busca + filtros */}

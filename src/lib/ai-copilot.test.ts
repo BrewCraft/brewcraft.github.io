@@ -1,7 +1,21 @@
 /// <reference types="node" />
 import { strict as assert } from "node:assert";
 import { describe, test } from "node:test";
-import { buildCopilotContext, queryRecipesByAbv, executeCalculator, proposeRecipeCreate, proposeRecipeUpdate, proposeInventoryAdd, applyProposal, extractJsonObject, shouldAllowCopilotMutation } from "./ai-copilot";
+import {
+  buildCopilotContext,
+  queryRecipesByAbv,
+  executeCalculator,
+  proposeRecipeCreate,
+  proposeRecipeUpdate,
+  proposeInventoryAdd,
+  applyProposal,
+  extractJsonObject,
+  shouldAllowCopilotMutation,
+  classifyCopilotIntent,
+  prepareCopilotTurn,
+  type CopilotChatMessage,
+} from "./ai-copilot";
+import { GeminiService } from "./gemini";
 import { defaultEquipment, type InventoryItem, type Recipe } from "./recipe-calc";
 import { defaultSettings } from "./settings-model";
 
@@ -161,5 +175,190 @@ describe("guarda de intenção para mutações do copiloto", () => {
       assert.equal(applied.ok, true);
       if (applied.ok) assert.equal(applied.recipes.length, 2);
     }
+  });
+});
+
+describe("roteamento de intenção e consulta sob demanda do copiloto", () => {
+  const makeSpyTools = () => {
+    const calls = { recipes: 0, inventory: 0, settings: 0 };
+    return {
+      calls,
+      tools: {
+        getRecipes: () => {
+          calls.recipes += 1;
+          return [recipe()];
+        },
+        getInventory: () => {
+          calls.inventory += 1;
+          return inv();
+        },
+        getSettings: () => {
+          calls.settings += 1;
+          return defaultSettings;
+        },
+      },
+    };
+  };
+
+  test("saudações simples não disparam ferramentas de receita/inventário nem enviam contexto", () => {
+    for (const greeting of ["oi", "olá", "bom dia", "boa tarde", "boa noite", "tudo bem?", "oi, tudo bem?"]) {
+      const { calls, tools } = makeSpyTools();
+      const plan = prepareCopilotTurn(greeting, [], tools);
+      assert.equal(plan.intent.kind, "greeting", `Esperado greeting para "${greeting}"`);
+      assert.equal(calls.recipes, 0, `getRecipes não deve ser chamado para "${greeting}"`);
+      assert.equal(calls.inventory, 0, `getInventory não deve ser chamado para "${greeting}"`);
+      assert.equal(plan.consultedTools.recipes, false);
+      assert.equal(plan.consultedTools.inventory, false);
+      assert.equal(plan.context, undefined);
+      assert.equal(plan.intent.allowMutation, false);
+    }
+  });
+
+  test("perguntas gerais não consultam receitas nem inventário automaticamente", () => {
+    for (const q of ["O que é OG?", "Qual a diferença entre ale e lager?", "Como funciona o dry hopping?"]) {
+      const { calls, tools } = makeSpyTools();
+      const plan = prepareCopilotTurn(q, [], tools);
+      assert.equal(plan.intent.kind, "general_question", `Esperado general_question para "${q}"`);
+      assert.equal(calls.recipes, 0);
+      assert.equal(calls.inventory, 0);
+      assert.equal(plan.context, undefined);
+    }
+  });
+
+  test("solicitações explícitas de análise de receita consultam apenas receitas e BJCP", () => {
+    for (const prompt of [
+      "Analise minha receita",
+      "Minha receita está dentro do BJCP?",
+      "O que posso melhorar nesta receita?",
+      "oi, analise minha receita",
+    ]) {
+      const { calls, tools } = makeSpyTools();
+      const plan = prepareCopilotTurn(prompt, [], tools);
+      assert.equal(plan.intent.kind, "recipe_analysis", `Esperado recipe_analysis para "${prompt}"`);
+      assert.equal(calls.recipes, 1);
+      assert.equal(calls.inventory, 0);
+      assert.ok(plan.context?.recipes && plan.context.recipes.length === 1);
+      assert.ok(plan.context?.bjcpStyles && plan.context.bjcpStyles.length > 0);
+      assert.equal(plan.context?.inventory, undefined);
+    }
+  });
+
+  test("criação explícita de receita sem mencionar estoque inicia criação sem consultar receitas ou inventário", () => {
+    for (const prompt of [
+      "Crie uma APA de 20 litros",
+      "Monte uma receita para 20 litros",
+      "Quero desenvolver uma nova cerveja",
+    ]) {
+      const { calls, tools } = makeSpyTools();
+      const plan = prepareCopilotTurn(prompt, [], tools);
+      assert.equal(plan.intent.kind, "recipe_creation", `Esperado recipe_creation para "${prompt}"`);
+      assert.equal(plan.intent.allowMutation, true);
+      assert.equal(shouldAllowCopilotMutation(prompt, [], "PROPOSE_CREATE_RECIPE"), true);
+      assert.equal(calls.recipes, 0);
+      assert.equal(calls.inventory, 0);
+      assert.equal(plan.context?.recipes, undefined);
+      assert.equal(plan.context?.inventory, undefined);
+      assert.ok(plan.context?.bjcpStyles && plan.context.bjcpStyles.length > 0);
+    }
+  });
+
+  test("consulta de inventário acessa estoque sem consultar receitas desnecessariamente", () => {
+    const { calls, tools } = makeSpyTools();
+    const plan = prepareCopilotTurn("Quais ingredientes tenho?", [], tools);
+    assert.equal(plan.intent.kind, "inventory_query");
+    assert.equal(calls.inventory, 1);
+    assert.equal(calls.recipes, 0);
+    assert.ok(plan.context?.inventory && plan.context.inventory.length === 2);
+    assert.equal(plan.context?.recipes, undefined);
+  });
+
+  test("verificação de estoque para receita existente consulta inventário e receita", () => {
+    const { calls, tools } = makeSpyTools();
+    const plan = prepareCopilotTurn("Tenho malte suficiente para esta receita?", [], tools);
+    assert.equal(plan.intent.kind, "inventory_query");
+    assert.equal(calls.inventory, 1);
+    assert.equal(calls.recipes, 1);
+    assert.ok(plan.context?.inventory);
+    assert.ok(plan.context?.recipes);
+  });
+
+  test("criação de receita usando estoque consulta inventário e inicia criação", () => {
+    const { calls, tools } = makeSpyTools();
+    const plan = prepareCopilotTurn("Crie uma receita usando meu estoque", [], tools);
+    assert.equal(plan.intent.kind, "recipe_creation");
+    assert.equal(plan.intent.allowMutation, true);
+    assert.equal(calls.inventory, 1);
+    assert.equal(calls.recipes, 0);
+    assert.ok(plan.context?.inventory);
+    assert.ok(plan.context?.bjcpStyles);
+  });
+
+  test("histórico com análises ou coleta anterior não provoca análise nem mutação em novas saudações ou perguntas gerais", () => {
+    const history: CopilotChatMessage[] = [
+      { role: "user", content: "Analise minha receita" },
+      { role: "model", content: "### Análise da IPA Teste\nNão foi possível preparar a proposta. Faltam: eficiência (%)." },
+    ];
+
+    const greetingSpy = makeSpyTools();
+    const greetingPlan = prepareCopilotTurn("oi", history, greetingSpy.tools);
+    assert.equal(greetingPlan.intent.kind, "greeting");
+    assert.equal(greetingSpy.calls.recipes, 0);
+    assert.equal(greetingSpy.calls.inventory, 0);
+    assert.equal(greetingPlan.context, undefined);
+    assert.equal(greetingPlan.messagesForModel.length, 1);
+    assert.equal(greetingPlan.messagesForModel[0].content, "oi");
+    assert.equal(shouldAllowCopilotMutation("oi", history, "PROPOSE_CREATE_RECIPE"), false);
+
+    const questionSpy = makeSpyTools();
+    const questionPlan = prepareCopilotTurn("O que é OG?", history, questionSpy.tools);
+    assert.equal(questionPlan.intent.kind, "general_question");
+    assert.equal(questionSpy.calls.recipes, 0);
+    assert.equal(questionSpy.calls.inventory, 0);
+    assert.equal(questionPlan.context, undefined);
+    assert.equal(questionPlan.messagesForModel.length, 1);
+    assert.equal(questionPlan.messagesForModel[0].content, "O que é OG?");
+    assert.equal(shouldAllowCopilotMutation("O que é OG?", history, "PROPOSE_CREATE_RECIPE"), false);
+  });
+
+  test("preserva contexto para continuação de tarefa iniciada", () => {
+    const creationHistory: CopilotChatMessage[] = [
+      { role: "user", content: "Crie uma receita usando meu estoque" },
+      { role: "model", content: "Qual volume e estilo você prefere? Faltam: volume do lote (L)." },
+    ];
+    const spy = makeSpyTools();
+    const plan = prepareCopilotTurn("20 litros, eficiência 75% e estilo APA", creationHistory, spy.tools);
+    assert.equal(plan.intent.kind, "task_continuation");
+    assert.equal(plan.intent.allowMutation, true);
+    assert.equal(spy.calls.inventory, 1);
+    assert.equal(plan.messagesForModel.length, 3);
+
+    const analysisHistory: CopilotChatMessage[] = [
+      { role: "user", content: "Analise minha receita" },
+      { role: "model", content: "A APA da Casa está com 35 IBU." },
+    ];
+    const followUpSpy = makeSpyTools();
+    const followUp = prepareCopilotTurn("E qual lúpulo posso substituir nela?", analysisHistory, followUpSpy.tools);
+    assert.ok(followUp.intent.kind === "recipe_analysis" || followUp.intent.kind === "task_continuation");
+    assert.equal(followUp.intent.allowMutation, false);
+    assert.equal(followUpSpy.calls.recipes, 1);
+    assert.equal(followUp.messagesForModel.length, 3);
+  });
+
+  test("GeminiService não anexa Contexto do BrewCraft quando context é undefined", () => {
+    const service = new GeminiService("fake-key");
+    const internal = service as unknown as {
+      buildContents: (msgs: CopilotChatMessage[], ctx?: unknown) => Array<{ role: string; parts: Array<{ text?: string }> }>;
+    };
+    const contents = internal.buildContents([{ role: "user", content: "oi" }], undefined);
+    assert.equal(contents.length, 1);
+    assert.equal(contents[0].parts[0].text, "oi");
+    assert.equal(contents[0].parts[0].text?.includes("Contexto do BrewCraft"), false);
+  });
+
+  test("classifyCopilotIntent identifica intenção ambígua sem consultar dados", () => {
+    const intent = classifyCopilotIntent("ajuda", []);
+    assert.equal(intent.kind, "unclear");
+    assert.equal(intent.needsRecipes, false);
+    assert.equal(intent.needsInventory, false);
   });
 });

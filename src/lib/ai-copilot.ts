@@ -52,11 +52,67 @@ export type CopilotInventoryItem = InventoryItem & {
 export type CopilotContext = {
   source: "brewcraft";
   generatedAt: string;
-  settings: AppSettings;
-  recipes: CopilotRecipeSummary[];
-  inventory: CopilotInventoryItem[];
-  calculators: { id: string; title: string; group: string; note?: string; fields: { id: string; label: string; initial: string; min?: number; max?: number }[] }[];
-  bjcpStyles: { code: string; name: string; og: [number, number]; fg: [number, number]; ibu: [number, number]; srm: [number, number]; abv: [number, number] }[];
+  settings?: AppSettings;
+  recipes?: CopilotRecipeSummary[];
+  inventory?: CopilotInventoryItem[];
+  calculators?: { id: string; title: string; group: string; note?: string; fields: { id: string; label: string; initial: string; min?: number; max?: number }[] }[];
+  bjcpStyles?: { code: string; name: string; og: [number, number]; fg: [number, number]; ibu: [number, number]; srm: [number, number]; abv: [number, number] }[];
+};
+
+export type CopilotContextScope = {
+  recipes?: boolean;
+  inventory?: boolean;
+  calculators?: boolean;
+  bjcpStyles?: boolean;
+  settings?: boolean;
+};
+
+export type CopilotChatMessage = {
+  role: "user" | "model" | "system";
+  content: string;
+  image?: string;
+};
+
+export type CopilotTools = {
+  getRecipes: () => Recipe[];
+  getInventory: () => InventoryItem[];
+  getSettings: () => AppSettings;
+};
+
+export type CopilotIntentKind =
+  | "greeting"
+  | "general_question"
+  | "recipe_analysis"
+  | "recipe_creation"
+  | "recipe_update"
+  | "inventory_query"
+  | "inventory_mutation"
+  | "calculator"
+  | "task_continuation"
+  | "unclear";
+
+export type CopilotIntent = {
+  kind: CopilotIntentKind;
+  needsRecipes: boolean;
+  needsInventory: boolean;
+  needsBjcp: boolean;
+  needsCalculators: boolean;
+  needsSettings: boolean;
+  allowMutation: boolean;
+  isolatedHistory: boolean;
+};
+
+export type CopilotTurnPlan = {
+  intent: CopilotIntent;
+  context?: CopilotContext;
+  messagesForModel: CopilotChatMessage[];
+  consultedTools: {
+    recipes: boolean;
+    inventory: boolean;
+    bjcpStyles: boolean;
+    calculators: boolean;
+    settings: boolean;
+  };
 };
 
 const r4 = (n: number) => (Number.isFinite(n) ? Math.round(n * 10000) / 10000 : n);
@@ -91,29 +147,63 @@ export function summarizeRecipe(recipe: Recipe, settings: AppSettings = defaultS
   };
 }
 
-export function buildCopilotContext(args: { recipes: Recipe[]; inventory: InventoryItem[]; settings?: AppSettings }): CopilotContext {
+function mapInventoryItems(items: InventoryItem[]): CopilotInventoryItem[] {
+  return (items ?? []).map((i) => {
+    const any = i as InventoryItem & Record<string, unknown>;
+    const validade = typeof any.validade === "string" ? any.validade : typeof any.expiry === "string" ? any.expiry : undefined;
+    const dataAquisicao = typeof any.dataAquisicao === "string" ? any.dataAquisicao : typeof any.acquiredAt === "string" ? any.acquiredAt : undefined;
+    const hasMeta = Boolean(validade || dataAquisicao || any.dataCadastro);
+    return {
+      ...i,
+      validade,
+      dataAquisicao,
+      dataCadastro: typeof any.dataCadastro === "string" ? any.dataCadastro : undefined,
+      metadataNote: hasMeta ? "ok" : "Validade e data de aquisição não cadastradas para este item.",
+    };
+  });
+}
+
+export function buildCopilotContext(
+  args: { recipes: Recipe[]; inventory: InventoryItem[]; settings?: AppSettings },
+  scope: CopilotContextScope = { recipes: true, inventory: true, calculators: true, bjcpStyles: true, settings: true },
+): CopilotContext {
   const settings = normalizeSettings(args.settings ?? defaultSettings);
-  return {
+  const ctx: CopilotContext = {
     source: "brewcraft",
     generatedAt: new Date().toISOString(),
-    settings,
-    recipes: (args.recipes ?? []).map((r) => summarizeRecipe(r, settings)),
-    inventory: (args.inventory ?? []).map((i) => {
-      const any = i as InventoryItem & Record<string, unknown>;
-      const validade = typeof any.validade === "string" ? any.validade : typeof any.expiry === "string" ? any.expiry : undefined;
-      const dataAquisicao = typeof any.dataAquisicao === "string" ? any.dataAquisicao : typeof any.acquiredAt === "string" ? any.acquiredAt : undefined;
-      const hasMeta = Boolean(validade || dataAquisicao || any.dataCadastro);
-      return {
-        ...i,
-        validade,
-        dataAquisicao,
-        dataCadastro: typeof any.dataCadastro === "string" ? any.dataCadastro : undefined,
-        metadataNote: hasMeta ? "ok" : "Validade e data de aquisição não cadastradas para este item.",
-      };
-    }),
-    calculators: calculators.map((c) => ({ id: c.id, title: c.title, group: c.group, note: c.note, fields: c.fields.map(f => ({ id: f.id, label: f.label, initial: f.initial, min: f.min, max: f.max })) })),
-    bjcpStyles: bjcpStyles.map((s) => ({ code: s.code, name: s.name, og: s.og, fg: s.fg, ibu: s.ibu, srm: s.srm, abv: s.abv })),
   };
+
+  if (scope.settings) {
+    ctx.settings = settings;
+  }
+  if (scope.recipes) {
+    ctx.recipes = (args.recipes ?? []).map((r) => summarizeRecipe(r, settings));
+  }
+  if (scope.inventory) {
+    ctx.inventory = mapInventoryItems(args.inventory ?? []);
+  }
+  if (scope.calculators) {
+    ctx.calculators = calculators.map((c) => ({
+      id: c.id,
+      title: c.title,
+      group: c.group,
+      note: c.note,
+      fields: c.fields.map((f) => ({ id: f.id, label: f.label, initial: f.initial, min: f.min, max: f.max })),
+    }));
+  }
+  if (scope.bjcpStyles) {
+    ctx.bjcpStyles = bjcpStyles.map((s) => ({
+      code: s.code,
+      name: s.name,
+      og: s.og,
+      fg: s.fg,
+      ibu: s.ibu,
+      srm: s.srm,
+      abv: s.abv,
+    }));
+  }
+
+  return ctx;
 }
 
 export function queryRecipesByAbv(recipes: CopilotRecipeSummary[], op: ">" | ">=" | "<" | "<=" | "==" , value: number) {
@@ -418,6 +508,363 @@ const normalizeIntentText = (text: string) =>
     .toLowerCase()
     .trim();
 
+const GREETING_SEGMENT_RE =
+  /^(?:oi|ola|bom dia|boa tarde|boa noite|e ai|opa|fala|salve|hello|hi|hey|tudo bem|tudo bom|td bem|td bom|como vai|como voce esta|como vc esta|beleza|joia|obrigado|obrigada|muito obrigado|muito obrigada|valeu|ate mais|tchau|amigo|pessoal|galera|copiloto|assistente|cervejeiro|por ai|com voce|com vc)\b[\s!?,.;:-]*/;
+
+function stripGreetingSegments(normalized: string): string {
+  let rest = normalized.replace(/^[\s!?,.;:-]+/, "");
+  let changed = true;
+  while (changed && rest.length > 0) {
+    const next = rest.replace(GREETING_SEGMENT_RE, "").replace(/^[\s!?,.;:-]+/, "");
+    changed = next !== rest;
+    rest = next;
+  }
+  return rest.trim();
+}
+
+export function isPureGreeting(text: string): boolean {
+  const normalized = normalizeIntentText(text);
+  if (!normalized) return false;
+  return stripGreetingSegments(normalized) === "";
+}
+
+const INVENTORY_MENTION_RE =
+  /\b(inventario|estoque|ingredientes disponiveis|ingredientes que tenho|ingredientes tenho|que ingredientes|quais ingredientes|meus ingredientes|usando meu estoque|com meu estoque|usando o estoque|com o que tenho|tenho.*suficiente|falta.*ingrediente|lista de compras|preciso comprar|validade.*lupulo|lupulos sem validade|preco.*estoque)\b/;
+
+const RECIPE_TARGET_RE =
+  /\b(minha receita|minhas receitas|essa receita|esta receita|nesta receita|nessa receita|da receita|na receita|minha cerveja|meu lote|apa da casa|cadastrada|cadastradas)\b/;
+
+const ANAPHORA_RE = /\b(dela|nela|disso|desse|dessa|desta|deste|nessa|nesse|nesta|neste)\b/;
+
+const CONCEPTUAL_QUESTION_RE =
+  /^(?:(?:e|mas|entao)\s+)?(como|por que|porque|qual|quais|o que|onde|quando|para que|pra que|posso|devo|me explique|explique)\b/;
+
+const NEGATED_MUTATION_RE =
+  /\b(nao|sem)\s+(crie|criar|cria|salve|salvar|salva|gere|gerar|monte|montar|adicione|adicionar|altere|alterar|edite|editar|desenvolva|desenvolver)\b/;
+
+const CREATION_COMMAND_RE =
+  /\b(crie|criar|cria|gere|gerar|gera|monte|montar|monta|elabore|elaborar|cadastre|cadastrar|cadastra|salve|salvar|salva|desenvolva|desenvolver|formule|formular|create|generate|build|save)\b/;
+
+const EXPLICIT_WANT_CREATE_RE =
+  /\b(quero|gostaria de|preciso|vamos)\s+(criar|montar|desenvolver|elaborar|fazer|produzir)\s+(uma\s+|um\s+)?(nova\s+|novo\s+)?(receita|cerveja|ipa|apa|neipa|lager|pilsen|pilsner|stout|porter|weiss|weizen|witbier|saison|bitter|pale ale|lote)\b/;
+
+const UPDATE_COMMAND_RE =
+  /\b(altere|alterar|altera|edite|editar|edita|atualize|atualizar|atualiza|modifique|modificar|mude|mudar|ajuste|ajustar|corrija|corrigir|substitua|substituir|remova|remover|update|edit|modify|change|adjust)\b/;
+
+const INVENTORY_MUTATION_RE =
+  /\b(adicione|adicionar|adiciona|cadastre|cadastrar|cadastra|registre|registrar|coloque|colocar|insira|inserir|comprei|some|somar|remova|remover|deduza|deduzir|baixe|dar baixa|add|register)\b/;
+
+const ANALYSIS_VERB_RE =
+  /\b(analise|analisar|avalie|avaliar|verifique|verificar|cheque|checar|revise|revisar|compare|comparar|liste|listar|mostre|mostrar|filtre|filtrar|melhorar|melhorias|desequilibrio|dentro do estilo|dentro do bjcp|fora do estilo|compatibilidade)\b/;
+
+const CALCULATOR_COMMAND_RE =
+  /\b(calcule|calcular|calcula|use a calculadora|execute a calculadora|converter|converta)\b/;
+
+function getActiveTaskWindow(previousMessages: CopilotChatMessage[]): CopilotChatMessage[] {
+  let startIndex = 0;
+  for (let i = 0; i < previousMessages.length; i++) {
+    const msg = previousMessages[i];
+    if (msg.role === "user" && isPureGreeting(msg.content)) {
+      startIndex = i + 1;
+    }
+  }
+  return previousMessages.slice(startIndex);
+}
+
+function isContinuationCue(text: string, previousMessages: CopilotChatMessage[]): boolean {
+  const activeWindow = getActiveTaskWindow(previousMessages);
+  if (activeWindow.length === 0) return false;
+  const lastModel = [...activeWindow].reverse().find((m) => m.role === "model");
+  if (!lastModel) return false;
+
+  const isCollectingInfo =
+    lastModel.content.includes("Não foi possível preparar") ||
+    lastModel.content.includes("Responda com as informações necessárias") ||
+    lastModel.content.includes("Faltam:") ||
+    lastModel.content.trim().endsWith("?");
+
+  const isShortReply = text.split(/\s+/).length <= 16 && !CONCEPTUAL_QUESTION_RE.test(text);
+  const hasFollowUpPhrase =
+    ANAPHORA_RE.test(text) ||
+    /^(sim|pode|confirmo|ok|beleza|fechado|isso|exato|use|coloque|adicione|aumente|diminua|reduza|troque|mude)\b/.test(text);
+
+  return (isCollectingInfo && isShortReply) || hasFollowUpPhrase;
+}
+
+export function classifyCopilotIntent(
+  userText: string,
+  previousMessages: CopilotChatMessage[] = [],
+  opts: { hasImage?: boolean } = {},
+): CopilotIntent {
+  const rawNormalized = normalizeIntentText(userText);
+  if (!rawNormalized) {
+    return {
+      kind: opts.hasImage ? "general_question" : "unclear",
+      needsRecipes: false,
+      needsInventory: false,
+      needsBjcp: false,
+      needsCalculators: false,
+      needsSettings: false,
+      allowMutation: false,
+      isolatedHistory: false,
+    };
+  }
+
+  if (isPureGreeting(rawNormalized)) {
+    return {
+      kind: "greeting",
+      needsRecipes: false,
+      needsInventory: false,
+      needsBjcp: false,
+      needsCalculators: false,
+      needsSettings: false,
+      allowMutation: false,
+      isolatedHistory: true,
+    };
+  }
+
+  const text = stripGreetingSegments(rawNormalized) || rawNormalized;
+  const hasNegatedMutation = NEGATED_MUTATION_RE.test(text);
+  const mentionsInventory = INVENTORY_MENTION_RE.test(text);
+  const mentionsRecipeTarget = RECIPE_TARGET_RE.test(text);
+  const mentionsBjcp = /\b(bjcp|diretriz|diretrizes|dentro do estilo|fora do estilo)\b/.test(text);
+  const mentionsRecipeOrStyleNoun =
+    /\b(receita|receitas|cerveja|ipa|apa|neipa|lager|pilsen|pilsner|stout|porter|weiss|weizen|witbier|saison|bitter|pale ale|amber|red ale|blonde|tripel|dubbel|quadrupel|bock|kolsch|marzen|lote)\b/.test(text);
+  const isConceptual =
+    CONCEPTUAL_QUESTION_RE.test(text) &&
+    !/\b(no app|no brewcraft|para mim|pra mim|e salve|salva)\b/.test(text);
+
+  // 1. Explicit inventory mutation ("adicione 5 kg de malte no inventário")
+  if (
+    !hasNegatedMutation &&
+    INVENTORY_MUTATION_RE.test(text) &&
+    (/\b(inventario|estoque)\b/.test(text) || /\bcomprei\b/.test(text))
+  ) {
+    return {
+      kind: "inventory_mutation",
+      needsRecipes: mentionsRecipeTarget,
+      needsInventory: true,
+      needsBjcp: false,
+      needsCalculators: false,
+      needsSettings: true,
+      allowMutation: true,
+      isolatedHistory: false,
+    };
+  }
+
+  // 2. Explicit recipe update ("altere/corrija/atualize minha receita...")
+  if (
+    !hasNegatedMutation &&
+    !isConceptual &&
+    UPDATE_COMMAND_RE.test(text) &&
+    (mentionsRecipeTarget || mentionsRecipeOrStyleNoun || ANAPHORA_RE.test(text))
+  ) {
+    return {
+      kind: "recipe_update",
+      needsRecipes: true,
+      needsInventory: mentionsInventory,
+      needsBjcp: true,
+      needsCalculators: false,
+      needsSettings: true,
+      allowMutation: true,
+      isolatedHistory: false,
+    };
+  }
+
+  // 3. Explicit recipe creation ("crie uma APA de 20L", "monte uma receita", "quero desenvolver uma nova cerveja")
+  const wantsRecipeCreation =
+    !hasNegatedMutation &&
+    !isConceptual &&
+    ((CREATION_COMMAND_RE.test(text) && (mentionsRecipeOrStyleNoun || /\b\d+\s*(l|litros?)\b/.test(text))) ||
+      /\b(faca|fazer|faz)\s+(uma|um|essa|esta|a)\s+(nova\s+)?(receita|cerveja)\b/.test(text) ||
+      EXPLICIT_WANT_CREATE_RE.test(text));
+
+  if (wantsRecipeCreation) {
+    const basedOnExistingRecipe = /\b(baseada na minha|a partir da minha|parecida com minha|copia da minha)\b/.test(text);
+    return {
+      kind: "recipe_creation",
+      needsRecipes: basedOnExistingRecipe,
+      needsInventory: mentionsInventory,
+      needsBjcp: true,
+      needsCalculators: false,
+      needsSettings: true,
+      allowMutation: true,
+      isolatedHistory: false,
+    };
+  }
+
+  // 4. Explicit inventory query ("Quais ingredientes tenho?", "Tenho malte suficiente para esta receita?")
+  if (mentionsInventory) {
+    return {
+      kind: "inventory_query",
+      needsRecipes: mentionsRecipeTarget || /\bsuficiente\s+para\b/.test(text),
+      needsInventory: true,
+      needsBjcp: false,
+      needsCalculators: false,
+      needsSettings: mentionsRecipeTarget,
+      allowMutation: false,
+      isolatedHistory: false,
+    };
+  }
+
+  // 5. Explicit recipe analysis / consultation ("Analise minha receita", "Minha receita está dentro do BJCP?")
+  const asksRecipeAnalysis =
+    mentionsRecipeTarget ||
+    (ANALYSIS_VERB_RE.test(text) && (mentionsRecipeOrStyleNoun || ANAPHORA_RE.test(text))) ||
+    /\b(quais receitas|quantas receitas|receitas com abv|receitas acima|receitas abaixo)\b/.test(text);
+
+  if (asksRecipeAnalysis) {
+    return {
+      kind: "recipe_analysis",
+      needsRecipes: true,
+      needsInventory: mentionsInventory,
+      needsBjcp: true,
+      needsCalculators: false,
+      needsSettings: true,
+      allowMutation: false,
+      isolatedHistory: false,
+    };
+  }
+
+  // 6. Explicit calculator request
+  if (CALCULATOR_COMMAND_RE.test(text)) {
+    return {
+      kind: "calculator",
+      needsRecipes: mentionsRecipeTarget || ANAPHORA_RE.test(text),
+      needsInventory: false,
+      needsBjcp: false,
+      needsCalculators: true,
+      needsSettings: true,
+      allowMutation: false,
+      isolatedHistory: false,
+    };
+  }
+
+  // 7. Follow-up / continuation of active multi-turn task (not a standalone conceptual question)
+  if (isContinuationCue(text, previousMessages)) {
+    const activeWindow = getActiveTaskWindow(previousMessages);
+    const activeUserHistory = activeWindow
+      .filter((m) => m.role === "user")
+      .map((m) => normalizeIntentText(m.content))
+      .join(" ");
+
+    const activeNeedsInventory = INVENTORY_MENTION_RE.test(activeUserHistory) || mentionsInventory;
+    const activeNeedsRecipes =
+      RECIPE_TARGET_RE.test(activeUserHistory) ||
+      ANALYSIS_VERB_RE.test(activeUserHistory) ||
+      UPDATE_COMMAND_RE.test(activeUserHistory);
+    const activeIsCreationOrMutation =
+      CREATION_COMMAND_RE.test(activeUserHistory) ||
+      EXPLICIT_WANT_CREATE_RE.test(activeUserHistory) ||
+      UPDATE_COMMAND_RE.test(activeUserHistory) ||
+      INVENTORY_MUTATION_RE.test(activeUserHistory);
+
+    return {
+      kind: "task_continuation",
+      needsRecipes: activeNeedsRecipes,
+      needsInventory: activeNeedsInventory,
+      needsBjcp: activeNeedsRecipes || activeIsCreationOrMutation || mentionsBjcp,
+      needsCalculators: CALCULATOR_COMMAND_RE.test(activeUserHistory),
+      needsSettings: activeNeedsRecipes || activeIsCreationOrMutation,
+      allowMutation: activeIsCreationOrMutation && !hasNegatedMutation,
+      isolatedHistory: false,
+    };
+  }
+
+  // 8. General technical/brewing question ("O que é OG?", "Como fazer uma IPA?", etc.)
+  if (
+    isConceptual ||
+    hasNegatedMutation ||
+    mentionsBjcp ||
+    /\b(og|fg|abv|ibu|ebc|srm|mostura|fermentacao|lupulo|malte|levedura|brassagem|dry hop|priming|carbonatacao|agua|ph|estilo|cerveja)\b/.test(text)
+  ) {
+    return {
+      kind: "general_question",
+      needsRecipes: false,
+      needsInventory: false,
+      needsBjcp: mentionsBjcp,
+      needsCalculators: false,
+      needsSettings: false,
+      allowMutation: false,
+      isolatedHistory: !ANAPHORA_RE.test(text),
+    };
+  }
+
+  return {
+    kind: "unclear",
+    needsRecipes: false,
+    needsInventory: false,
+    needsBjcp: false,
+    needsCalculators: false,
+    needsSettings: false,
+    allowMutation: false,
+    isolatedHistory: true,
+  };
+}
+
+export function prepareCopilotTurn(
+  userText: string,
+  previousMessages: CopilotChatMessage[],
+  tools: CopilotTools,
+  opts: { hasImage?: boolean; currentUserMessage?: CopilotChatMessage } = {},
+): CopilotTurnPlan {
+  const intent = classifyCopilotIntent(userText, previousMessages, { hasImage: opts.hasImage });
+  const currentMessage: CopilotChatMessage = opts.currentUserMessage ?? {
+    role: "user",
+    content: userText,
+  };
+
+  const messagesForModel = intent.isolatedHistory
+    ? [currentMessage]
+    : [...getActiveTaskWindow(previousMessages), currentMessage];
+
+  const consultedTools = {
+    recipes: intent.needsRecipes,
+    inventory: intent.needsInventory,
+    bjcpStyles: intent.needsBjcp,
+    calculators: intent.needsCalculators,
+    settings: intent.needsSettings,
+  };
+
+  const needsAnyContext =
+    consultedTools.recipes ||
+    consultedTools.inventory ||
+    consultedTools.bjcpStyles ||
+    consultedTools.calculators ||
+    consultedTools.settings;
+
+  if (!needsAnyContext) {
+    return {
+      intent,
+      context: undefined,
+      messagesForModel,
+      consultedTools,
+    };
+  }
+
+  const recipes = consultedTools.recipes ? tools.getRecipes() : [];
+  const inventory = consultedTools.inventory ? tools.getInventory() : [];
+  const settings = consultedTools.settings || consultedTools.recipes ? tools.getSettings() : defaultSettings;
+
+  const context = buildCopilotContext(
+    { recipes, inventory, settings },
+    {
+      recipes: consultedTools.recipes,
+      inventory: consultedTools.inventory,
+      bjcpStyles: consultedTools.bjcpStyles,
+      calculators: consultedTools.calculators,
+      settings: consultedTools.settings,
+    },
+  );
+
+  return {
+    intent,
+    context,
+    messagesForModel,
+    consultedTools,
+  };
+}
+
 export function shouldAllowCopilotMutation(
   userText: string,
   previousMessages: Array<{ role: string; content: string }>,
@@ -427,13 +874,19 @@ export function shouldAllowCopilotMutation(
   const isCreate = kind === "PROPOSE_CREATE_RECIPE" || kind === "CREATE_RECIPE";
   const isUpdate = kind === "PROPOSE_UPDATE_RECIPE" || kind === "UPDATE_RECIPE";
   const isInventory = kind === "PROPOSE_ADD_INVENTORY" || kind === "ADD_INVENTORY";
-  if (!isCreate && !isUpdate && !isInventory) return true;
+  const isSetting = kind === "UPDATE_SETTING";
 
   const text = normalizeIntentText(userText);
   if (!text) return false;
+  if (isPureGreeting(text)) return false;
+
+  if (isSetting) {
+    return /\b(configuracao|configuracoes|setting|settings|unidade|unidades|eficiencia|idioma|tema|moeda|formula)\b/.test(text);
+  }
+  if (!isCreate && !isUpdate && !isInventory) return true;
 
   // Negação explícita de ação (ex.: "não crie receita", "sem salvar")
-  if (/\b(nao|não|sem)\s+(crie|criar|cria|salve|salvar|salva|gere|gerar|monte|montar|adicione|adicionar|altere|alterar|edite|editar)\b/.test(text)) {
+  if (NEGATED_MUTATION_RE.test(text)) {
     return false;
   }
 
@@ -443,22 +896,28 @@ export function shouldAllowCopilotMutation(
   }
 
   // Perguntas conceituais ("como fazer", "como criar", "o que posso fazer") não são comandos de mutação
-  const isConceptualQuestion = /^(como|por que|porque|qual|quais|o que|onde|quando)\s+(fazer|criar|montar|editar|calcular|posso fazer|devo fazer)\b/.test(text);
+  const isConceptualQuestion =
+    /^(como|por que|porque|qual|quais|o que|onde|quando)\s+(fazer|criar|montar|editar|calcular|posso fazer|devo fazer|e|significa)\b/.test(text);
   if (isConceptualQuestion && !/\b(no app|no brewcraft|para mim|pra mim|e salve|salva)\b/.test(text)) {
     return false;
   }
 
   if (isCreate) {
-    if (/\b(crie|criar|cria|gere|gerar|gera|monte|montar|monta|elabore|elaborar|cadastre|cadastrar|cadastra|salve|salvar|salva|create|generate|build|save)\b/.test(text)) {
+    if (
+      /\b(crie|criar|cria|gere|gerar|gera|monte|montar|monta|elabore|elaborar|cadastre|cadastrar|cadastra|salve|salvar|salva|desenvolva|desenvolver|create|generate|build|save)\b/.test(text)
+    ) {
       return true;
     }
-    if (/\b(faca|fazer|faz)\s+(uma|um|essa|esta|a)\s+(receita|cerveja)\b/.test(text)) {
+    if (/\b(faca|fazer|faz)\s+(uma|um|essa|esta|a)\s+(nova\s+)?(receita|cerveja)\b/.test(text)) {
+      return true;
+    }
+    if (EXPLICIT_WANT_CREATE_RE.test(text)) {
       return true;
     }
   }
 
   if (isUpdate) {
-    if (/\b(altere|alterar|altera|edite|editar|edita|atualize|atualizar|atualiza|modifique|modificar|mude|mudar|ajuste|ajustar|corrija|corrigir|substitua|substituir|adicione|adicionar|remova|remover|update|edit|modify|change|adjust)\b/.test(text)) {
+    if (UPDATE_COMMAND_RE.test(text) || /\b(adicione|adicionar)\b/.test(text)) {
       return true;
     }
   }
@@ -470,14 +929,23 @@ export function shouldAllowCopilotMutation(
   }
 
   // Continuação de coleta de dados após proposta incompleta na última resposta do assistente
-  const lastModel = [...previousMessages].reverse().find((m) => m.role === "model");
-  if (
-    lastModel &&
-    (lastModel.content.includes("Não foi possível preparar") ||
-      lastModel.content.includes("Responda com as informações necessárias") ||
-      lastModel.content.includes("Faltam:"))
-  ) {
-    return true;
+  // (somente se a mensagem atual não for uma pergunta conceitual solta)
+  if (!CONCEPTUAL_QUESTION_RE.test(text)) {
+    const activeWindow = getActiveTaskWindow(
+      previousMessages.map((m) => ({
+        role: m.role === "model" ? "model" : m.role === "system" ? "system" : "user",
+        content: m.content,
+      })),
+    );
+    const lastModel = [...activeWindow].reverse().find((m) => m.role === "model");
+    if (
+      lastModel &&
+      (lastModel.content.includes("Não foi possível preparar") ||
+        lastModel.content.includes("Responda com as informações necessárias") ||
+        lastModel.content.includes("Faltam:"))
+    ) {
+      return true;
+    }
   }
 
   return false;

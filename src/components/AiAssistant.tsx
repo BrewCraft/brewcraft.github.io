@@ -38,7 +38,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { GeminiService, geminiLimiter, type Message, GEMINI_3_LIVE_MODELS, GEMINI_3_FALLBACK_MODELS, DEFAULT_GEMINI_3_MODEL, supportsImages } from "@/lib/gemini";
 import { useGeminiLive } from "@/hooks/use-gemini-live";
-import { buildCopilotContext, proposeRecipeCreate, proposeRecipeUpdate, proposeInventoryAdd, applyProposal, executeCalculator, extractJsonObject, shouldAllowCopilotMutation, type Proposal } from "@/lib/ai-copilot";
+import { prepareCopilotTurn, proposeRecipeCreate, proposeRecipeUpdate, proposeInventoryAdd, applyProposal, executeCalculator, extractJsonObject, shouldAllowCopilotMutation, type Proposal } from "@/lib/ai-copilot";
+import { MarkdownContent } from "@/components/MarkdownContent";
 import { readSettings, saveSettings, useSettings } from "@/lib/settings";
 import {
   Tooltip,
@@ -707,9 +708,22 @@ export default function AiAssistant() {
     try {
       const gemini = new GeminiService(apiKey, selectedModel);
 
-      const context = buildCopilotContext({ recipes, inventory, settings: readSettings() });
+      const turnPlan = prepareCopilotTurn(
+        currentText,
+        messages,
+        {
+          getRecipes: () => recipes,
+          getInventory: () => inventory,
+          getSettings: () => readSettings(),
+        },
+        { hasImage: Boolean(currentImage), currentUserMessage: userMessage },
+      );
 
-      const streamResult = await gemini.chatStream([...messages, userMessage], context, nextAbortController.signal);
+      const streamResult = await gemini.chatStream(
+        turnPlan.messagesForModel,
+        turnPlan.context,
+        nextAbortController.signal,
+      );
       let streamedText = "";
 
       setActualModelUsed(streamResult.modelUsed);
@@ -1247,11 +1261,14 @@ export default function AiAssistant() {
                             {recipePreview ? (
                               <div className="space-y-3">
                                 {recipePreview.explanation && (
-                                  <p className="text-sm whitespace-pre-wrap leading-relaxed text-slate-700 dark:text-slate-200">
-                                    {recipePreview.explanation}
-                                  </p>
+                                  <MarkdownContent
+                                    content={recipePreview.explanation}
+                                    className="text-slate-700 dark:text-slate-200"
+                                  />
                                 )}
                               </div>
+                            ) : m.role === "model" ? (
+                              <MarkdownContent content={displayContent} />
                             ) : (
                               <p className="text-sm whitespace-pre-wrap leading-relaxed">{displayContent}</p>
                             )}
