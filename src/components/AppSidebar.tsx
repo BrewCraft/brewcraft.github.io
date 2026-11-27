@@ -12,11 +12,13 @@ import {
   Sparkles,
   Cloud,
   Download,
+  X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { confirmNavigationIfGuarded } from "@/lib/navigation-guard";
 import { useSettings } from "@/lib/settings";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -27,6 +29,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { useSidebar } from "@/components/ui/sidebar-context";
 
 type OfflineReleaseInfo = {
   version: string;
@@ -60,6 +63,7 @@ const toolsItems = [
 export function AppSidebar() {
   const location = useLocation();
   const [settings] = useSettings();
+  const { isMobile, setOpenMobile } = useSidebar();
   const isEnglish = settings.language === "en-US";
   const t = (pt: string, en: string) => (isEnglish ? en : pt);
 
@@ -167,12 +171,31 @@ export function AppSidebar() {
   const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     if (!confirmNavigationIfGuarded()) {
       e.preventDefault();
+      return;
+    }
+    if (isMobile) {
+      setOpenMobile(false);
     }
   };
 
   return (
     <Sidebar className="border-r border-border bg-[#edf3fb] text-slate-800 dark:bg-[#171b20] dark:text-[#eaf1ff]">
       <SidebarContent className="p-3">
+        {isMobile && (
+          <div className="flex items-center justify-end pb-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => setOpenMobile(false)}
+              aria-label={t("Fechar menu", "Close menu")}
+              title={t("Fechar menu", "Close menu")}
+              className="h-8 w-8 text-slate-600 hover:text-slate-900 dark:text-[#d9e7ff]/80 dark:hover:text-[#eaf1ff]"
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+        )}
         <SidebarGroup>
           <SidebarGroupLabel className="text-slate-500 dark:text-[#d9e7ff]/70 font-medium">{t("Principal", "Main")}</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -266,6 +289,9 @@ export function AppSidebar() {
                     onClick={() => {
                       if (!offlineRelease) return;
                       window.open(offlineRelease.downloadUrl, "_blank", "noopener,noreferrer");
+                      if (isMobile) {
+                        setOpenMobile(false);
+                      }
                     }}
                     className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
                     title={
