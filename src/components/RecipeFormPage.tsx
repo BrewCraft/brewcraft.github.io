@@ -546,7 +546,7 @@ function RecipeFormEditor({ id }: { id?: string }) {
           <CardContent className="space-y-3">
             {r.yeasts.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma levedura (atenuação padrão de 75%).</p>}
             {r.yeasts.map((y, i) => (
-              <div key={y.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 items-end">
+              <div key={y.id} className="grid grid-cols-2 sm:grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 items-end border-b border-border pb-3 sm:border-0 sm:pb-0">
                 <div><Label className="text-xs text-muted-foreground">Nome</Label><Input value={y.name} disabled={isReadOnly} onChange={e => updateList("yeasts", i, { name: e.target.value })} /></div>
                 <NumField label="Aten. %" value={y.attenuation} step="1" disabled={isReadOnly} onChange={v => updateList("yeasts", i, { attenuation: v })} />
                 <NumField label="Pacotes" value={y.packs} step="1" disabled={isReadOnly} onChange={v => updateList("yeasts", i, { packs: v })} />
@@ -563,7 +563,7 @@ function RecipeFormEditor({ id }: { id?: string }) {
           <CardContent className="space-y-3">
             {r.miscs.length === 0 && <p className="text-sm text-muted-foreground">Nenhum item.</p>}
             {r.miscs.map((m, i) => (
-              <div key={m.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 items-end">
+              <div key={m.id} className="grid grid-cols-2 sm:grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 items-end border-b border-border pb-3 sm:border-0 sm:pb-0">
                 <div><Label className="text-xs text-muted-foreground">Nome</Label><Input value={m.name} disabled={isReadOnly} onChange={e => updateList("miscs", i, { name: e.target.value })} /></div>
                 <NumField label={`Qtd (${m.unit})`} value={m.amount} disabled={isReadOnly} onChange={v => updateList("miscs", i, { amount: v })} />
                 <div><Label className="text-xs text-muted-foreground">Uso</Label><Input value={m.use} disabled={isReadOnly} onChange={e => updateList("miscs", i, { use: e.target.value })} /></div>
@@ -581,7 +581,7 @@ function RecipeFormEditor({ id }: { id?: string }) {
           <CardContent className="space-y-3">
             <ProfileSelect label="Perfil de mostura" value={r.mashProfileId} profiles={mashProfiles} onChange={applyMash} disabled={isReadOnly} />
             {r.mashSteps.map((s, i) => (
-              <div key={i} className="grid grid-cols-[2fr_1fr_1fr_auto] gap-2 items-end">
+              <div key={i} className="grid grid-cols-2 sm:grid-cols-[2fr_1fr_1fr_auto] gap-2 items-end border-b border-border pb-3 sm:border-0 sm:pb-0">
                 <div><Label className="text-xs text-muted-foreground">Passo</Label><Input value={s.name} disabled={isReadOnly} onChange={e => set({ mashSteps: r.mashSteps.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} /></div>
                 <NumField label="°C" value={s.tempC} disabled={isReadOnly} onChange={v => set({ mashSteps: r.mashSteps.map((x, j) => (j === i ? { ...x, tempC: v } : x)) })} />
                 <NumField label="min" value={s.minutes} step="1" disabled={isReadOnly} onChange={v => set({ mashSteps: r.mashSteps.map((x, j) => (j === i ? { ...x, minutes: v } : x)) })} />

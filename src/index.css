@@ -116,16 +116,21 @@ All colors MUST be HSL.
 
   html {
     background: hsl(var(--background));
+    overflow-x: clip;
   }
 
   body {
     @apply bg-background text-foreground;
     background: hsl(var(--background));
     color: hsl(var(--foreground));
+    overflow-x: clip;
+    max-width: 100%;
   }
 
   #root {
     min-height: 100vh;
+    overflow-x: clip;
+    max-width: 100%;
   }
 
   .mug-metrics {

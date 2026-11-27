@@ -62,7 +62,7 @@ function LibraryPreviewModal({
           )}
 
           {/* Métricas */}
-          <div className="grid grid-cols-5 gap-2 text-center">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
             {[
               ["OG", fmt(s.og, 3)],
               ["FG", fmt(s.fg, 3)],
@@ -77,7 +77,7 @@ function LibraryPreviewModal({
             ))}
           </div>
 
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div>
               <p className="font-semibold mb-1">Fermentáveis</p>
               <ul className="space-y-0.5 text-muted-foreground">
@@ -136,7 +136,7 @@ function LibraryPreviewModal({
             </div>
           </div>
 
-          <div className="flex gap-2 pt-2">
+          <div className="flex flex-wrap gap-2 pt-2">
             <Button className="flex-1 bg-gradient-primary text-primary-foreground" onClick={onCopy}>
               <Copy className="h-4 w-4 mr-2" />Copiar para Minhas Receitas
             </Button>
@@ -318,14 +318,14 @@ export default function RecipesPage() {
             <Badge variant="secondary" className="ml-1.5 h-5">{libraryRecipes.length}</Badge>
           </Button>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => fileRef.current?.click()}>
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+          <Button variant="outline" size="sm" className="sm:h-10 sm:px-4" onClick={() => fileRef.current?.click()}>
             <Upload className="h-4 w-4 mr-2" />Importar BeerXML
           </Button>
-          <Button variant="outline" onClick={() => jsonRef.current?.click()}>
+          <Button variant="outline" size="sm" className="sm:h-10 sm:px-4" onClick={() => jsonRef.current?.click()}>
             <Upload className="h-4 w-4 mr-2" />Importar BeerJSON
           </Button>
-          <Button onClick={() => navigate("/recipes/new")} className="bg-gradient-primary text-primary-foreground shadow-brew">
+          <Button size="sm" className="sm:h-10 sm:px-4 bg-gradient-primary text-primary-foreground shadow-brew" onClick={() => navigate("/recipes/new")}>
             <Plus className="h-4 w-4 mr-2" />Nova Receita
           </Button>
         </div>
@@ -343,7 +343,7 @@ export default function RecipesPage() {
         {/* Filtro por categoria (somente na biblioteca) */}
         {tab === "library" && (
           <select
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="max-w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             value={categoryFilter}
             onChange={e => setCategoryFilter(e.target.value as LibraryCategory | "")}
             aria-label="Filtrar por categoria"
@@ -358,7 +358,7 @@ export default function RecipesPage() {
         {/* Filtro por estilo BJCP */}
         {presentStyles.length > 0 && (
           <select
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="max-w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             value={styleFilter}
             onChange={e => setStyleFilter(e.target.value)}
             aria-label="Filtrar por estilo BJCP"
